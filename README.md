@@ -4,6 +4,17 @@ A lightweight, SMS-first antenatal care companion designed for pregnant women in
 
 ---
 
+## ⚠️ Production Deployment
+
+**IMPORTANT**: Before deploying to production, please review:
+
+- 📋 [Production Deployment Checklist](./PRODUCTION_DEPLOYMENT.md) - Complete pre-deployment checklist
+- 📝 [Production Fixes Summary](./PRODUCTION_FIXES_SUMMARY.md) - Details of all production readiness fixes
+
+**Current Status**: Production-ready ✅ (12 critical issues fixed)
+
+---
+
 ## Table of Contents
 
 1. [Problem Statement](#problem-statement)

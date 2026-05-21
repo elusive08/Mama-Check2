@@ -1,0 +1,1239 @@
+openapi: 3.0.0
+info:
+  title: MamaCheck API - Complete Reference
+  description: |
+    # MamaCheck - SMS-First Antenatal Care System
+
+    Comprehensive REST API for pregnancy management, ANC reminders, and danger sign triage in Nigeria.
+
+    ## Key Features
+    - **Pregnancy Management**: Registration with OTP verification, timeline tracking
+    - **ANC Reminders**: Daily scheduling at 07:00 WAT, personalized messages
+    - **Danger Sign Triage**: Weekly check-ins with RED/YELLOW/GREEN outcomes
+    - **CHEW Dashboard**: Real-time KPIs, women registry, red flag management
+    - **Multi-language**: English, Pidgin, Yoruba, Hausa, Igbo
+    - **SMS Integration**: Termii SMS gateway with DND compliance
+    - **Visit Tracking**: Attendance marking with 10-minute undo window
+    - **Reference Data**: LGA and PHC management with geolocation
+
+    ## Security
+    - JWT authentication for all protected endpoints
+    - Role-based access (PATIENT, CHEW, SUPERVISOR, ADMIN)
+    - OTP verification for phone number validation
+    - Rate limiting on SMS and registration endpoints
+    - BCRYPT password hashing in production
+
+    ## SMS Triage Guide
+    Women reply with symptom numbers:
+    - **0** = No symptoms (GREEN)
+    - **1** = Heavy bleeding (RED)
+    - **2** = Severe headache (RED)
+    - **3** = Swollen face/hands (RED)
+    - **4** = Blurry vision (YELLOW)
+    - **5** = Fever (YELLOW)
+    - **6** = Reduced baby movement (YELLOW)
+    - **7** = Severe abdominal pain (RED)
+    - **8** = Convulsion (RED)
+    - **STOP** = Opt-out from SMS
+  version: "1.0.0"
+  termsOfService: "https://mamacheck.ng/terms"
+  contact:
+    name: MamaCheck Support
+    email: support@mamacheck.ng
+    url: "https://mamacheck.ng"
+  license:
+    name: Proprietary
+    url: "https://mamacheck.ng/license"
+
+servers:
+  - url: "http://localhost:3000/api/v1"
+    description: Local Development
+  - url: "https://staging-api.mamacheck.ng/api/v1"
+    description: Staging Environment
+  - url: "https://api.mamacheck.ng/api/v1"
+    description: Production
+
+tags:
+  - name: System
+    description: Health checks and system info
+  - name: Authentication
+    description: Login, OTP, and password management
+  - name: Pregnancies
+    description: Pregnancy registration and ANC visit tracking
+  - name: Dashboard
+    description: CHEW dashboard with analytics
+  - name: CHEW
+    description: CHEW-specific endpoints
+  - name: Webhooks
+    description: SMS ingestion from Termii
+  - name: Reference Data
+    description: LGA, PHC, and system data
+
+paths:
+  /:
+    get:
+      tags:
+        - System
+      summary: API Info
+      description: Get MamaCheck API information and endpoints
+      responses:
+        "200":
+          description: API information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: MamaCheck API
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  endpoints:
+                    type: object
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: System Health Check
+      description: Check if API and database are operational
+      responses:
+        "200":
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+                    description: Uptime in seconds
+                  environment:
+                    type: string
+                    example: development
+                  database:
+                    type: object
+                    properties:
+                      connected:
+                        type: boolean
+                      status:
+                        type: string
+        "503":
+          description: System degraded or database unavailable
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User Login
+      description: Authenticate with phone and password. Returns JWT token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+                - password
+              properties:
+                phone:
+                  type: string
+                  example: "08012345678"
+                  description: Nigerian phone number
+                password:
+                  type: string
+                  format: password
+                  example: "securePassword123"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token for authenticated requests
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      phone:
+                        type: string
+                      role:
+                        type: string
+                        enum: [patient, chew, supervisor, admin]
+        "401":
+          description: Invalid phone or password
+        "429":
+          description: Too many login attempts - rate limited
+
+  /auth/request-otp:
+    post:
+      tags:
+        - Authentication
+      summary: Request OTP
+      description: Send OTP via SMS to phone number. Requires active pregnancy for women.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+              properties:
+                phone:
+                  type: string
+                  example: "08012345678"
+      responses:
+        "200":
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "OTP sent successfully"
+        "500":
+          description: Failed to send OTP (Termii error)
+
+  /auth/verify-otp:
+    post:
+      tags:
+        - Authentication
+      summary: Verify OTP
+      description: Verify OTP and receive authentication token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+                - otp
+              properties:
+                phone:
+                  type: string
+                  example: "08012345678"
+                otp:
+                  type: string
+                  example: "123456"
+                  minLength: 6
+                  maxLength: 6
+      responses:
+        "200":
+          description: OTP verified, token returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+        "401":
+          description: Invalid or expired OTP
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get Current User
+      description: Retrieve authenticated user details
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+
+  /pregnancies/register:
+    post:
+      tags:
+        - Pregnancies
+      summary: Register New Pregnancy
+      description: |
+        CHEW registers a pregnant woman. Collects:
+        - Woman's name, phone, preferred language
+        - Last Menstrual Period (LMP) or Expected Delivery Date (EDD)
+        - Clinic name (PHC)
+        - Trusted contact (optional)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PregnancyRegistration"
+      responses:
+        "201":
+          description: Pregnancy registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  pregnancyId:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          description: Invalid OTP or missing fields
+        "403":
+          description: User is not a CHEW
+
+  /pregnancies/chew/{chewId}:
+    get:
+      tags:
+        - Pregnancies
+      summary: Get CHEW's Pregnancies
+      description: List all pregnancies registered under a CHEW
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: chewId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of pregnancies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pregnancy"
+
+  /pregnancies/{pregnancyId}:
+    get:
+      tags:
+        - Pregnancies
+      summary: Get Pregnancy Details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: pregnancyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pregnancy details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pregnancy"
+        "404":
+          description: Pregnancy not found
+
+  /pregnancies/{pregnancyId}/attended:
+    post:
+      tags:
+        - Pregnancies
+      summary: Mark ANC Visit Attended
+      description: Record that a woman attended her scheduled ANC visit. Cancels reminders for that milestone.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: pregnancyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - milestoneNumber
+              properties:
+                milestoneNumber:
+                  type: integer
+                  minimum: 1
+                  maximum: 8
+                  example: 6
+                  description: FMOH milestone number
+                visitDate:
+                  type: string
+                  format: date
+                  description: Date of visit (defaults to today)
+      responses:
+        "200":
+          description: Visit marked as attended
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "404":
+          description: Pregnancy not found
+
+  /pregnancies/{pregnancyId}/attended/undo:
+    post:
+      tags:
+        - Pregnancies
+      summary: Undo Visit Attendance
+      description: |
+        Reverse a visit attendance marking. 
+        **Can only undo within 10-minute window after marking.**
+        After 10 minutes, undo is not permitted.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: pregnancyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - milestoneNumber
+              properties:
+                milestoneNumber:
+                  type: integer
+                  example: 6
+                reason:
+                  type: string
+                  example: "Marked in error"
+      responses:
+        "200":
+          description: Attendance undone successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: Undo window expired (10 minutes) or no record found
+
+  /pregnancies/{pregnancyId}/attendance-history:
+    get:
+      tags:
+        - Pregnancies
+      summary: Get Attendance History
+      description: View all attendance records with undo availability info
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: pregnancyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Attendance history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    visitWeek:
+                      type: integer
+                    action:
+                      type: string
+                      enum: [marked_attended, undone, unmarked]
+                    markedAt:
+                      type: string
+                      format: date-time
+                    canUndo:
+                      type: boolean
+                    undoWindowExpires:
+                      type: string
+                      format: date-time
+
+  /pregnancies/{pregnancyId}/danger-reports:
+    get:
+      tags:
+        - Pregnancies
+      summary: Get Danger Reports
+      description: Retrieve all danger/triage reports for a pregnancy
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: pregnancyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of danger reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DangerReport"
+
+  /dashboard/chew/overview:
+    get:
+      tags:
+        - Dashboard
+      summary: Get Dashboard Overview
+      description: Real-time KPIs for CHEW dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Dashboard overview with KPIs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      totalWomen:
+                        type: integer
+                      activePregnancies:
+                        type: integer
+                      highRiskWomen:
+                        type: integer
+                      dueThisWeek:
+                        type: integer
+                      overdueVisits:
+                        type: integer
+                      redFlagsToday:
+                        type: integer
+                      redFlagsThisWeek:
+                        type: integer
+                      averageResponseTime:
+                        type: number
+                        description: Minutes
+
+  /dashboard/chew/women:
+    get:
+      tags:
+        - Dashboard
+      summary: Get Women Registry
+      description: List of assigned pregnant women with status
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Women registry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  women:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WomanSummary"
+
+  /dashboard/chew/red-flags:
+    get:
+      tags:
+        - Dashboard
+      summary: Get Red Flags
+      description: List of RED (critical) triage outcomes requiring CHEW follow-up
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: RED flag cases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DangerReport"
+
+  /dashboard/chew/weekly-summary:
+    get:
+      tags:
+        - Dashboard
+      summary: Get Weekly Summary
+      description: Single-number overview for CHEW reporting
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Weekly statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalWomen:
+                    type: integer
+                  dueThisWeek:
+                    type: integer
+                  missedVisits:
+                    type: integer
+                  openRedFlags:
+                    type: integer
+                  weekStartDate:
+                    type: string
+                    format: date
+                  weekEndDate:
+                    type: string
+                    format: date
+
+  /webhook/termii/sms:
+    post:
+      tags:
+        - Webhooks
+      summary: Incoming SMS Webhook (Termii)
+      description: |
+        Receives SMS from Termii for:
+        - Danger sign triage responses (numbered symptoms)
+        - STOP keyword for SMS opt-out
+        - Emergency contact information
+      operationId: handleIncomingSMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - from
+                - text
+              properties:
+                from:
+                  type: string
+                  example: "09012345678"
+                text:
+                  type: string
+                  example: "1,2,3"
+                message_id:
+                  type: string
+      responses:
+        "200":
+          description: SMS processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+                    enum: [processed, opt_out_processed, ignored]
+                  triage:
+                    type: string
+                    enum: [GREEN, YELLOW, RED]
+                    description: Triage outcome
+                  reportId:
+                    type: string
+        "404":
+          description: User or pregnancy not found
+
+  /webhook/simulate-sms:
+    post:
+      tags:
+        - Webhooks
+      summary: Simulate SMS (Development Only)
+      description: Test SMS workflows without Termii integration. Development environment only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - from
+                - text
+              properties:
+                from:
+                  type: string
+                  example: "09012345678"
+                text:
+                  type: string
+                  example: "1,2"
+                  description: "Comma-separated symptom numbers or STOP"
+      responses:
+        "200":
+          description: SMS simulated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  triage:
+                    type: string
+                    enum: [GREEN, YELLOW, RED]
+
+  /reference/lgas:
+    get:
+      tags:
+        - Reference Data
+      summary: Get All LGAs
+      description: List all Local Government Areas in Nigeria
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            example: "Kaduna"
+      responses:
+        "200":
+          description: List of LGAs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LGA"
+
+    post:
+      tags:
+        - Reference Data
+      summary: Create LGA (Admin Only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LGACreateRequest"
+      responses:
+        "201":
+          description: LGA created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LGA"
+        "403":
+          description: Admin role required
+
+  /reference/states:
+    get:
+      tags:
+        - Reference Data
+      summary: Get All States
+      description: List all Nigerian states
+      responses:
+        "200":
+          description: List of states
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  states:
+                    type: array
+                    items:
+                      type: string
+
+  /reference/lgas/state/{state}:
+    get:
+      tags:
+        - Reference Data
+      summary: Get LGAs by State
+      parameters:
+        - name: state
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "Kaduna"
+      responses:
+        "200":
+          description: LGAs in state
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LGA"
+
+  /reference/phcs/lga/{lga}:
+    get:
+      tags:
+        - Reference Data
+      summary: Get PHCs by LGA
+      description: List Primary Healthcare Centers in an LGA
+      parameters:
+        - name: lga
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "Kaduna North"
+      responses:
+        "200":
+          description: PHCs in LGA
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PHC"
+
+  /reference/phcs/state/{state}:
+    get:
+      tags:
+        - Reference Data
+      summary: Get PHCs by State
+      parameters:
+        - name: state
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PHCs in state
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PHC"
+
+  /reference/phcs/nearest:
+    get:
+      tags:
+        - Reference Data
+      summary: Find Nearest PHC
+      description: Geolocation-based PHC lookup for clinic suggestions
+      parameters:
+        - name: latitude
+          in: query
+          required: true
+          schema:
+            type: number
+            example: 6.5244
+        - name: longitude
+          in: query
+          required: true
+          schema:
+            type: number
+            example: 3.3792
+        - name: maxDistance
+          in: query
+          schema:
+            type: integer
+            default: 5000
+            description: Maximum distance in meters
+      responses:
+        "200":
+          description: Nearest PHC found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PHC"
+        "404":
+          description: No PHC found within distance
+
+  /reference/phcs:
+    post:
+      tags:
+        - Reference Data
+      summary: Create PHC (Admin Only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PHCCreateRequest"
+      responses:
+        "201":
+          description: PHC created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PHC"
+        "403":
+          description: Admin role required
+
+  /reference/lgas/{lgaId}:
+    put:
+      tags:
+        - Reference Data
+      summary: Update LGA (Admin Only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: lgaId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LGACreateRequest"
+      responses:
+        "200":
+          description: LGA updated
+
+    delete:
+      tags:
+        - Reference Data
+      summary: Delete LGA (Admin Only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: lgaId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: LGA deleted
+
+  /reference/phcs/{phcId}:
+    put:
+      tags:
+        - Reference Data
+      summary: Update PHC (Admin Only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: phcId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PHCCreateRequest"
+      responses:
+        "200":
+          description: PHC updated
+
+    delete:
+      tags:
+        - Reference Data
+      summary: Delete PHC (Admin Only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: phcId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PHC deleted
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [patient, chew, supervisor, admin]
+        preferredLanguage:
+          type: string
+          enum: [en, pidgin, yo, ha, ig]
+        trustedContact:
+          type: object
+          properties:
+            name:
+              type: string
+            phone:
+              type: string
+        consent:
+          type: object
+          properties:
+            sms:
+              type: boolean
+        optOut:
+          type: object
+          properties:
+            isOptedOut:
+              type: boolean
+
+    PregnancyRegistration:
+      type: object
+      required:
+        - womanDetails
+        - lmp
+        - chewId
+        - otp
+      properties:
+        womanDetails:
+          type: object
+          required:
+            - name
+            - phone
+          properties:
+            name:
+              type: string
+            phone:
+              type: string
+            preferredLanguage:
+              type: string
+              enum: [en, pidgin, yo, ha, ig]
+              default: en
+        lmp:
+          type: string
+          format: date
+          example: "2025-09-18"
+        edd:
+          type: string
+          format: date
+        clinicName:
+          type: string
+          example: "Ungwan Rimi PHC"
+        chewId:
+          type: string
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+        trustedContact:
+          type: object
+          properties:
+            name:
+              type: string
+            phone:
+              type: string
+            relationship:
+              type: string
+            preferredLanguage:
+              type: string
+              enum: [en, pidgin, yo, ha, ig]
+
+    Pregnancy:
+      type: object
+      properties:
+        _id:
+          type: string
+        womanId:
+          $ref: "#/components/schemas/User"
+        gestationalWeek:
+          type: integer
+          minimum: 0
+          maximum: 42
+        status:
+          type: string
+          enum: [active, delivered, miscarried, transferred]
+        lmp:
+          type: string
+          format: date
+        edd:
+          type: string
+          format: date
+        ancVisits:
+          type: array
+          items:
+            type: object
+            properties:
+              weekNumber:
+                type: integer
+              status:
+                type: string
+                enum: [scheduled, attended, missed]
+              scheduledDate:
+                type: string
+                format: date
+              attendedDate:
+                type: string
+                format: date
+
+    DangerReport:
+      type: object
+      properties:
+        _id:
+          type: string
+        reportedSymptoms:
+          type: array
+          items:
+            type: integer
+            enum: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        triageOutcome:
+          type: string
+          enum: [GREEN, YELLOW, RED]
+        timestamp:
+          type: string
+          format: date-time
+        requiresFollowup:
+          type: boolean
+        followup:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [pending, in_progress, completed, escalated]
+            outcome:
+              type: string
+              enum: [phone_contact, clinic_visit, referral_hospital]
+
+    WomanSummary:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        gestationalWeek:
+          type: integer
+        nextANCDue:
+          type: string
+          format: date
+        redFlagStatus:
+          type: boolean
+
+    LGA:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        state:
+          type: string
+        code:
+          type: string
+        isActive:
+          type: boolean
+
+    LGACreateRequest:
+      type: object
+      required:
+        - name
+        - state
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+        code:
+          type: string
+
+    PHC:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        lga:
+          type: string
+        state:
+          type: string
+        address:
+          type: string
+        contactName:
+          type: string
+        contactPhone:
+          type: string
+        coordinates:
+          type: object
+          properties:
+            latitude:
+              type: number
+            longitude:
+              type: number
+        isActive:
+          type: boolean
+
+    PHCCreateRequest:
+      type: object
+      required:
+        - name
+        - lga
+        - state
+      properties:
+        name:
+          type: string
+        lga:
+          type: string
+        state:
+          type: string
+        address:
+          type: string
+        contactName:
+          type: string
+        contactPhone:
+          type: string
+        coordinates:
+          type: object
+          properties:
+            latitude:
+              type: number
+            longitude:
+              type: number

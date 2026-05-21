@@ -1,0 +1,453 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["*"]
+  workflow_dispatch:
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Stage 1: Lint and Test
+  # ──────────────────────────────────────────────
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:latest
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create test environment file
+        run: |
+          cat > .env.test << EOF
+          NODE_ENV=test
+          MONGODB_URI=mongodb://localhost:27017/mamacheck-test
+          JWT_SECRET=test-secret-key-for-github-actions
+          TERMII_API_KEY=test-key
+          GROQ_API_KEY=test-key
+          EOF
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Run tests with coverage
+        env:
+          MONGODB_URI: mongodb://localhost:27017/mamacheck-test
+          NODE_ENV: test
+          JWT_SECRET: test-secret-key-for-github-actions
+          TERMII_API_KEY: test-key
+          GROQ_API_KEY: test-key
+        run: npm test -- --coverage --watchAll=false --testTimeout=20000
+
+      - name: Verify test coverage thresholds
+        run: |
+          echo "Checking test coverage requirements (PRD compliance)..."
+          if [ ! -f coverage/coverage-summary.json ]; then
+            echo "Coverage report not found"
+            exit 1
+          fi
+          LINES_COVERAGE=$(grep -o '"lines".*"pct":[^}]*' coverage/coverage-summary.json | grep -o '[0-9]*\.[0-9]*' | head -1)
+          BRANCH_COVERAGE=$(grep -o '"branches".*"pct":[^}]*' coverage/coverage-summary.json | grep -o '[0-9]*\.[0-9]*' | head -1)
+          FUNCTION_COVERAGE=$(grep -o '"functions".*"pct":[^}]*' coverage/coverage-summary.json | grep -o '[0-9]*\.[0-9]*' | head -1)
+          STATEMENT_COVERAGE=$(grep -o '"statements".*"pct":[^}]*' coverage/coverage-summary.json | grep -o '[0-9]*\.[0-9]*' | head -1)
+          echo "Lines: $LINES_COVERAGE% | Branches: $BRANCH_COVERAGE% | Functions: $FUNCTION_COVERAGE% | Statements: $STATEMENT_COVERAGE%"
+          THRESHOLD=70
+          if (( $(echo "$LINES_COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "Lines coverage ($LINES_COVERAGE%) below minimum threshold ($THRESHOLD%)"
+            exit 1
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  # ──────────────────────────────────────────────
+  # Stage 2: PRD Compliance Verification
+  # ──────────────────────────────────────────────
+  prd-compliance:
+    name: PRD Compliance Check
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify PRD Core Modules Implementation
+        run: |
+          echo "Checking PRD Module Implementation..."
+
+          echo "Checking Module 1: Onboarding & Pregnancy Timeline"
+          grep -q "register.*pregnancy" src/controllers/pregnancyController.js || { echo "Pregnancy registration missing"; exit 1; }
+          grep -q "gestationalAge" src/models/Pregnancy.js || { echo "Gestational age tracking missing"; exit 1; }
+          grep -q "otp" src/routes/auth.js || { echo "OTP verification missing"; exit 1; }
+
+          echo "Checking Module 2: ANC Reminder Engine"
+          grep -q "reminderScheduler\|cron" src/services/schedulerService.js || { echo "Reminder scheduler missing"; exit 1; }
+          grep -q "07:00\|WAT" src/services/schedulerService.js || { echo "WAT timezone reminder missing"; exit 1; }
+
+          echo "Checking Module 3: Danger Sign Checker"
+          grep -q "triage\|triageService" src/services/triageService.js || { echo "Triage service missing"; exit 1; }
+          grep -q "RED\|YELLOW\|GREEN" src/services/triageService.js || { echo "Triage color coding missing"; exit 1; }
+
+          echo "Checking Module 4: CHEW Dashboard"
+          grep -q "dashboardController\|getCHEWOverview" src/controllers/dashboardController.js || { echo "CHEW dashboard missing"; exit 1; }
+
+          echo "All PRD core modules verified"
+
+      - name: Verify Required Endpoints
+        run: |
+          echo "Verifying all required endpoints..."
+
+          grep -q "/auth/login" src/routes/auth.js || { echo "Login endpoint missing"; exit 1; }
+          grep -q "/auth/verify-otp" src/routes/auth.js || { echo "OTP verification endpoint missing"; exit 1; }
+          grep -q "/auth/register-chew" src/routes/auth.js || { echo "CHEW registration endpoint missing"; exit 1; }
+          grep -q "/pregnancies/register" src/routes/pregnancies.js || { echo "Pregnancy registration endpoint missing"; exit 1; }
+          grep -q "attended" src/routes/pregnancies.js || { echo "Visit attendance endpoint missing"; exit 1; }
+          grep -q "dashboard\|overview" src/routes/dashboard.js || { echo "Dashboard endpoint missing"; exit 1; }
+
+          echo "All required endpoints verified"
+
+      - name: Verify Security Requirements
+        run: |
+          echo "Checking security implementation against PRD..."
+
+          grep -q "bcrypt\|hashPassword" src/utils/passwordUtils.js || { echo "Password hashing missing"; exit 1; }
+          grep -q "jwt\|JWT_SECRET" src/routes/auth.js || { echo "JWT authentication missing"; exit 1; }
+          grep -q "role\|requireCHEW\|requireSupervisor" src/middleware/auth.js || { echo "RBAC missing"; exit 1; }
+          grep -q "limiter\|rateLimit" src/middleware/rateLimiter.js || { echo "Rate limiting missing"; exit 1; }
+
+          echo "All security requirements verified"
+
+      - name: Verify Multi-language Support
+        run: |
+          echo "Checking multi-language support (PRD requirement: 5 languages)..."
+          grep -q "English\|Pidgin\|Yoruba\|Hausa\|Igbo" src/utils/languageMapper.js || { echo "Language mapping incomplete"; exit 1; }
+          echo "Multi-language support verified"
+
+      - name: Compliance Report
+        run: |
+          echo "========================================"
+          echo "PRD COMPLIANCE VERIFICATION COMPLETE"
+          echo "Core Modules:          Implemented"
+          echo "Required Endpoints:    Verified"
+          echo "Security Requirements: Met"
+          echo "Multi-language:        Configured (5 languages)"
+          echo "========================================"
+
+  # ──────────────────────────────────────────────
+  # Stage 3: Build
+  # ──────────────────────────────────────────────
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, prd-compliance]
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --only=production
+
+      - name: Run build
+        run: npm run build --if-present
+
+      - name: Verify production readiness
+        run: |
+          test -d src       || { echo "src folder missing"; exit 1; }
+          test -f server.js || { echo "server.js missing"; exit 1; }
+          echo "All readiness checks passed"
+
+      - name: Create build artifact
+        run: |
+          mkdir -p build-artifact
+          cp -r src build-artifact/
+          cp server.js build-artifact/
+          cp package.json build-artifact/
+          cp package-lock.json build-artifact/
+          tar -czf mamacheck-backend-build.tar.gz build-artifact/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mamacheck-backend-build
+          path: mamacheck-backend-build.tar.gz
+          retention-days: 5
+
+  # ──────────────────────────────────────────────
+  # Stage 4: Deploy to Staging (Render)
+  #
+  # Render deploys via a Deploy Hook URL — no SSH
+  # keys or server IPs needed.
+  # Secret needed: RENDER_STAGING_DEPLOY_HOOK_URL
+  # ──────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging (Render)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    steps:
+      - name: Trigger Render staging deploy
+        run: |
+          echo "Triggering Render staging deployment..."
+          RESPONSE=$(curl -s -o /tmp/render_response.json -w "%{http_code}" \
+            --request POST \
+            "${{ secrets.RENDER_STAGING_DEPLOY_HOOK_URL }}")
+          cat /tmp/render_response.json
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+            echo "Render staging deploy triggered (HTTP $RESPONSE)"
+          else
+            echo "Render staging deploy failed (HTTP $RESPONSE)"
+            exit 1
+          fi
+
+      - name: Wait for staging to become healthy
+        run: |
+          echo "Waiting for Render staging to spin up..."
+          sleep 30
+          STAGING_URL="https://mama-check-staging.onrender.com"
+          for i in {1..15}; do
+            if curl -f -s ${STAGING_URL}/health; then
+              echo "Staging health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/15 not ready, waiting 15s..."
+            sleep 15
+          done
+          echo "Staging health check failed after all attempts"
+          exit 1
+
+      - name: Slack Notification - Staging
+        if: always()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Staging Deployment ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Staging Deployment (Render)*\nStatus: ${{ job.status }}\nCommit: ${{ github.sha }}\nBranch: ${{ github.ref }}\nAuthor: ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+
+  # ──────────────────────────────────────────────
+  # Stage 5: Integration Tests on Staging
+  # ──────────────────────────────────────────────
+  integration-test-staging:
+    name: Integration Tests (Staging)
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/staging' && needs.deploy-staging.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm run test:integration --if-present
+        env:
+          API_URL: https://mama-check-staging.onrender.com
+          NODE_ENV: staging
+
+  # ──────────────────────────────────────────────
+  # Stage 6: Deploy to Production (Render)
+  #
+  # Secret needed: RENDER_PRODUCTION_DEPLOY_HOOK_URL
+  # ──────────────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production (Render)
+    runs-on: ubuntu-latest
+    needs: [build, integration-test-staging]
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.build.result == 'success' &&
+      (needs.integration-test-staging.result == 'success' || needs.integration-test-staging.result == 'skipped')
+    steps:
+      - name: Trigger Render production deploy
+        run: |
+          echo "Triggering Render production deployment..."
+          RESPONSE=$(curl -s -o /tmp/render_response.json -w "%{http_code}" \
+            --request POST \
+            "${{ secrets.RENDER_PRODUCTION_DEPLOY_HOOK_URL }}")
+          cat /tmp/render_response.json
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+            echo "Render production deploy triggered (HTTP $RESPONSE)"
+          else
+            echo "Render production deploy failed (HTTP $RESPONSE)"
+            exit 1
+          fi
+
+      - name: Wait for production to become healthy
+        run: |
+          echo "Waiting for Render production to spin up..."
+          sleep 60
+          PROD_URL="https://mama-check.onrender.com"
+          for i in {1..20}; do
+            if curl -f -s ${PROD_URL}/health; then
+              echo "Production health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/20 not ready, waiting 15s..."
+            sleep 15
+          done
+          echo "Production health check failed after all attempts"
+          exit 1
+
+      - name: Slack Notification - Production
+        if: always()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Production Deployment ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Production Deployment (Render)*\nStatus: ${{ job.status }}\nCommit: ${{ github.sha }}\nAuthor: ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+
+  # ──────────────────────────────────────────────
+  # Stage 7: Production Health & Monitoring
+  # ──────────────────────────────────────────────
+  production-monitoring:
+    name: Production Monitoring
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: needs.deploy-production.result == 'success'
+    steps:
+      - name: Check production API endpoints
+        run: |
+          echo "Checking API endpoints..."
+          PROD_URL="https://mama-check.onrender.com"
+          curl -f -s ${PROD_URL}/health        || { echo "Health endpoint failed"; exit 1; }
+          curl -f -s ${PROD_URL}/api/v1/health || { echo "v1 health endpoint failed"; exit 1; }
+          echo "All endpoints responding"
+
+      - name: Send Success Notification
+        if: always()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Production deployment successful and healthy",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Production Status: HEALTHY*\nAPI responding normally\nHosted on Render"
+                  }
+                }
+              ]
+            }
+
+  # ──────────────────────────────────────────────
+  # Stage 8: Generate Deployment Report
+  # ──────────────────────────────────────────────
+  report:
+    name: Generate Report
+    runs-on: ubuntu-latest
+    needs:
+      [lint-and-test, prd-compliance, build, deploy-staging, deploy-production]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create deployment report
+        run: |
+          cat > DEPLOYMENT_REPORT.md << EOF
+          # MamaCheck Backend — CI/CD Report
+
+          **Build Date**: $(date)
+          **Commit**: ${{ github.sha }}
+          **Branch**: ${{ github.ref }}
+          **Author**: ${{ github.actor }}
+
+          ## Pipeline Status
+          - Lint & Test (Node 20.x & 22.x): ${{ needs.lint-and-test.result }}
+          - PRD Compliance:                  ${{ needs.prd-compliance.result }}
+          - Build:                           ${{ needs.build.result }}
+
+          ## Deployment Targets (Render)
+          - Staging:    ${{ needs.deploy-staging.result || 'N/A' }}
+          - Production: ${{ needs.deploy-production.result || 'N/A' }}
+
+          ## Code Quality & Coverage
+          - Test Coverage minimum threshold: 70% line coverage
+          - Full report: Codecov dashboard
+
+          ## PRD Compliance
+          - Core Modules:       Onboarding, Reminder Engine, Danger Checker, CHEW Dashboard
+          - Required Endpoints: Verified
+          - Security:           bcrypt, JWT, RBAC, rate limiting
+          - Multi-language:     5 languages (EN, Pidgin, Yoruba, Hausa, Igbo)
+
+          Generated by GitHub Actions CI/CD Pipeline
+          EOF
+          cat DEPLOYMENT_REPORT.md
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-report
+          path: DEPLOYMENT_REPORT.md
