@@ -61,7 +61,7 @@ const messageQueueSchema = new mongoose.Schema(
       pregnancyId: mongoose.Schema.Types.ObjectId,
       womanId: mongoose.Schema.Types.ObjectId,
       triggerEvent: String,
-      termiiMessageId: String,
+      externalMessageId: String,
     },
   },
   {

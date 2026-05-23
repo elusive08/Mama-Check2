@@ -2,6 +2,7 @@ import Pregnancy from "../models/Pregnancy.js";
 import ANCPregnancy from "../models/ANCPregnancy.js";
 import User from "../models/User.js";
 import DangerReport from "../models/DangerReport.js";
+import ANCVisitLog from "../models/ANCVisitLog.js";
 import MessagingService from "../services/messagingService.js";
 import GestationalAgeService from "../services/gestationalAgeService.js";
 import { verifyOTP } from "../utils/otp.js";
@@ -12,19 +13,22 @@ class PregnancyController {
    */
   async register(req, res) {
     try {
-      const { womanDetails, lmp, edd, clinicName, chewId } = req.body;
+      const { name, phone, address, lmp, edd, clinicName, otp } = req.body;
 
       // Validate phone number with OTP
-      const otpValid = await verifyOTP(womanDetails.phone, req.body.otp);
+      const otpValid = await verifyOTP(phone, otp);
       if (!otpValid) {
         return res.status(400).json({ error: "Invalid OTP" });
       }
 
       // Create or get user
-      let woman = await User.findOne({ phone: womanDetails.phone });
+      let woman = await User.findOne({ phone });
       if (!woman) {
         woman = new User({
-          ...womanDetails,
+          name,
+          phone,
+          address,
+          preferredLanguage: req.body.preferredLanguage || "en",
           role: "patient",
           consent: {
             sms: true,
@@ -43,7 +47,7 @@ class PregnancyController {
       // Create pregnancy record
       const pregnancy = new Pregnancy({
         womanId: woman._id,
-        chewId: chewId,
+        chewId: req.user._id,
         lmp: lmp || gestationalAge.lmp,
         edd: edd || gestationalAge.edd,
         gestationalWeek: gestationalAge.weeks,
@@ -143,6 +147,18 @@ class PregnancyController {
           status: "attended",
         });
         await pregnancy.save();
+
+        // Create visit log for undo functionality
+        const visitLog = new ANCVisitLog({
+          pregnancyId,
+          womanId: pregnancy.womanId,
+          chewId: req.user._id,
+          visitWeek: milestoneNumber,
+          action: "marked_attended",
+          markedAtDate: new Date(),
+          markedAtTime: new Date(),
+        });
+        await visitLog.save();
       }
 
       res.json({ success: true });
@@ -323,7 +339,6 @@ class PregnancyController {
   async undoVisitAttended(req, res) {
     try {
       const { pregnancyId, milestoneNumber } = req.body;
-      const ANCVisitLog = (await import("../models/ANCVisitLog.js")).default;
 
       const pregnancy = await Pregnancy.findById(pregnancyId);
       if (!pregnancy) {
@@ -394,7 +409,6 @@ class PregnancyController {
   async getAttendanceHistory(req, res) {
     try {
       const { pregnancyId } = req.params;
-      const ANCVisitLog = (await import("../models/ANCVisitLog.js")).default;
 
       const logs = await ANCVisitLog.find({ pregnancyId }).sort({
         createdAt: -1,

@@ -111,22 +111,6 @@ export const alertRedFlagDeliveryFailure = (womanPhone, symptoms, retryCount) =>
 };
 
 /**
- * Alert for low Termii wallet balance
- */
-export const alertLowWalletBalance = (balance, threshold) => {
-  sendSlackNotification(
-    `Low Termii wallet balance: ₦${balance}`,
-    "warning",
-    {
-      currentBalance: balance,
-      threshold,
-      message:
-        "Consider topping up to avoid service interruption.",
-    },
-  );
-};
-
-/**
  * Alert for database connection failure
  */
 export const alertDatabaseFailure = (error) => {
@@ -141,11 +125,11 @@ export const alertDatabaseFailure = (error) => {
 };
 
 /**
- * Alert for Termii API failure
+ * Alert for SMS API failure
  */
-export const alertTermiiAPIFailure = (error, context) => {
+export const alertSMSAPIFailure = (error, context) => {
   sendSlackNotification(
-    "Termii API error",
+    "SMS API error",
     "error",
     {
       error: error.message,

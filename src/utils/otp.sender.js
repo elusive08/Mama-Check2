@@ -1,23 +1,10 @@
-import axios from "axios";
+import messagingService from "../services/messagingService.js";
 import otpStore from "./otpStore.js";
-
-const TERMII_API_KEY = process.env.TERMII_API_KEY;
-const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || "MamaCheck";
-const TERMII_BASE_URL = process.env.TERMII_BASE_URL || "https://api.termii.com";
 
 export const sendOTP = async (phone) => {
   let otp;
   try {
-    // Format phone number (ensure it's in international format)
-    let formattedPhone = phone;
-    if (phone.startsWith("0")) {
-      formattedPhone = "234" + phone.substring(1);
-    }
-    if (!formattedPhone.startsWith("234")) {
-      formattedPhone = "234" + formattedPhone;
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Store OTP
     await otpStore.set(
@@ -31,52 +18,36 @@ export const sendOTP = async (phone) => {
       300,
     );
 
-    // For testing without Termii
-    if (
-      process.env.NODE_ENV === "development" &&
-      TERMII_API_KEY === "test_mode"
-    ) {
-      console.log(`📱 [TEST MODE] OTP for ${phone}: ${otp}`);
-      return { success: true, messageId: `test-${Date.now()}`, isTest: true };
-    }
+    const messageContent = `Your MamaCheck verification code is: ${otp}. Valid for 5 minutes.`;
 
-    // Send via Termii
-    const payload = {
-      to: formattedPhone,
-      from: TERMII_SENDER_ID,
-      sms: `Your MamaCheck verification code is: ${otp}. Valid for 5 minutes.`,
-      type: "plain",
-      api_key: TERMII_API_KEY,
-      channel: "generic",
-    };
+    console.log("📤 Sending OTP via MessagingService to:", phone);
 
-    console.log("📤 Sending OTP via Termii to:", formattedPhone);
+    // Use MessagingService to send SMS
+    const result = await messagingService.sendSMS({
+      to: phone,
+      content: messageContent,
+      type: "otp",
+      save: () => Promise.resolve(), // Mock save if sendSMS expects a mongoose document
+      metadata: {},
+      retryCount: 0,
+      maxRetries: 3,
+    });
 
-    const response = await axios.post(
-      `${TERMII_BASE_URL}/api/sms/send`,
-      payload,
-      { timeout: 10000 },
-    );
-
-    if (response.data.code === "ok" || response.data.message_id) {
+    if (result.success) {
       console.log(`✅ OTP sent successfully to ${phone}`);
-      return { success: true, messageId: response.data.message_id };
+      return { success: true, messageId: result.messageId };
     } else {
-      throw new Error(response.data.message || "Termii returned error");
+      throw new Error(result.error || "Failed to send OTP");
     }
   } catch (error) {
-    console.error(
-      "❌ Termii OTP error:",
-      error.response?.data || error.message,
-    );
+    console.error("❌ OTP sending error:", error.message);
 
-    // Fallback for production - log OTP for debugging
+    // Fallback for debugging
     console.log(`📱 [FALLBACK] OTP for ${phone} would be: ${otp || "N/A"}`);
 
     return {
       success: false,
-      error:
-        error.response?.data?.message || error.message || "Failed to send OTP",
+      error: error.message || "Failed to send OTP",
     };
   }
 };

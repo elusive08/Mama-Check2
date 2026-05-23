@@ -11,8 +11,12 @@ import {
 } from "../utils/optOutHandler.js";
 
 class WebhookController {
+  constructor() {
+    this.messagingService = MessagingService;
+  }
+
   /**
-   * Handle incoming SMS from Termii
+   * Handle incoming SMS
    */
   async handleIncomingSMS(req, res) {
     try {
@@ -59,7 +63,7 @@ class WebhookController {
 
     if (user) {
       await handleOptOut(from, "User sent STOP keyword via SMS");
-      await sendOptOutConfirmation(from, MessagingService);
+      await sendOptOutConfirmation(from, this.messagingService);
     } else {
       console.log(`Opt-out request from unknown number: ${from}`);
     }
@@ -242,7 +246,7 @@ class WebhookController {
   }
 
   async sendTriageResponse(pregnancy, triageResult) {
-    await MessagingService.queueMessage({
+    await this.messagingService.queueMessage({
       to: pregnancy.womanId.phone,
       content: triageResult.message,
       language: pregnancy.womanId.preferredLanguage,
@@ -300,7 +304,7 @@ class WebhookController {
   }
 
   /**
-   * Handle Termii delivery report webhook
+   * Handle delivery report webhook
    */
   async handleDeliveryReport(req, res) {
     try {
@@ -308,7 +312,7 @@ class WebhookController {
 
       // Update message queue with delivery status
       const updatedMessage = await MessageQueue.findOneAndUpdate(
-        { messageId: message_id },
+        { "metadata.externalMessageId": message_id },
         { status: status, deliveredAt: new Date() },
         { new: true },
       );
@@ -320,7 +324,7 @@ class WebhookController {
       });
     } catch (error) {
       console.error("Delivery report error:", error);
-      res.status(200).json({ status: "error" }); // Return 200 to acknowledge to Termii
+      res.status(200).json({ status: "error" }); // Return 200 to acknowledge
     }
   }
 

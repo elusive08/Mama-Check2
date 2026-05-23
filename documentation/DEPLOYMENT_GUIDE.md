@@ -46,8 +46,9 @@ Create `.env` file in root directory:
 ```bash
 # Existing
 DATABASE_URL=mongodb://localhost:27017/mamacheck
-TERMII_API_KEY=your_existing_key
-TERMII_SENDER_ID=MAMACHECK
+TWILIO_ACCOUNT_SID=your_sid
+TWILIO_AUTH_TOKEN=your_token
+TWILIO_PHONE_NUMBER=your_number
 
 # New - Add these:
 BCRYPT_ROUNDS=10

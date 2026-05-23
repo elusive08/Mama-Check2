@@ -252,12 +252,12 @@ describe("Database Models", () => {
       const message = {
         _id: "msg-123",
         status: "sent",
-        termiiMessageId: "termii-msg-456",
+        externalMessageId: "twilio-msg-456",
         sentAt: new Date(),
       };
 
       expect(message.status).toBe("sent");
-      expect(message.termiiMessageId).toBeTruthy();
+      expect(message.externalMessageId).toBeTruthy();
     });
   });
 

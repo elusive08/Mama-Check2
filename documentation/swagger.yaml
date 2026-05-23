@@ -12,7 +12,7 @@ info:
     - **Danger Sign Triage**: Weekly check-ins with RED/YELLOW/GREEN outcomes
     - **CHEW Dashboard**: Real-time KPIs, women registry, red flag management
     - **Multi-language**: English, Pidgin, Yoruba, Hausa, Igbo
-    - **SMS Integration**: Termii SMS gateway with DND compliance
+    - **SMS Integration**: Twilio SMS gateway
     - **Visit Tracking**: Attendance marking with 10-minute undo window
     - **Reference Data**: LGA and PHC management with geolocation
 
@@ -65,7 +65,7 @@ tags:
   - name: CHEW
     description: CHEW-specific endpoints
   - name: Webhooks
-    description: SMS ingestion from Termii
+    description: SMS ingestion from SMS Gateway
   - name: Reference Data
     description: LGA, PHC, and system data
 
@@ -211,7 +211,7 @@ paths:
                     type: string
                     example: "OTP sent successfully"
         "500":
-          description: Failed to send OTP (Termii error)
+          description: Failed to send OTP (SMS service error)
 
   /auth/verify-otp:
     post:
@@ -632,13 +632,13 @@ paths:
                     type: string
                     format: date
 
-  /webhook/termii/sms:
+  /webhook/sms:
     post:
       tags:
         - Webhooks
-      summary: Incoming SMS Webhook (Termii)
+      summary: Incoming SMS Webhook
       description: |
-        Receives SMS from Termii for:
+        Receives SMS for:
         - Danger sign triage responses (numbered symptoms)
         - STOP keyword for SMS opt-out
         - Emergency contact information

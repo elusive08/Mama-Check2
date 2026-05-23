@@ -50,7 +50,9 @@ describe("Environment Validator", () => {
     test("should throw error when required variables are missing", () => {
       process.env.MONGODB_URI = undefined;
       process.env.JWT_SECRET = "test-secret-key-min-32-chars-long";
-      process.env.TERMII_API_KEY = "test-key";
+      process.env.TWILIO_ACCOUNT_SID = "test-sid";
+      process.env.TWILIO_AUTH_TOKEN = "test-token";
+      process.env.TWILIO_PHONE_NUMBER = "test-phone";
       process.env.GROQ_API_KEY = "test-key";
 
       expect(() => {
@@ -61,7 +63,9 @@ describe("Environment Validator", () => {
     test("should pass when all required variables are set", () => {
       process.env.MONGODB_URI = "mongodb://localhost:27017/test";
       process.env.JWT_SECRET = "test-secret-key-min-32-chars-long";
-      process.env.TERMII_API_KEY = "test-key";
+      process.env.TWILIO_ACCOUNT_SID = "test-sid";
+      process.env.TWILIO_AUTH_TOKEN = "test-token";
+      process.env.TWILIO_PHONE_NUMBER = "test-phone";
       process.env.GROQ_API_KEY = "test-key";
 
       expect(() => {
@@ -73,7 +77,9 @@ describe("Environment Validator", () => {
       process.env.NODE_ENV = "production";
       process.env.MONGODB_URI = "mongodb://localhost:27017/test";
       process.env.JWT_SECRET = "test-secret-key-min-32-chars-long";
-      process.env.TERMII_API_KEY = "test-key";
+      process.env.TWILIO_ACCOUNT_SID = "test-sid";
+      process.env.TWILIO_AUTH_TOKEN = "test-token";
+      process.env.TWILIO_PHONE_NUMBER = "test-phone";
       process.env.GROQ_API_KEY = "test-key";
       process.env.REDIS_URL = undefined;
 
@@ -86,7 +92,9 @@ describe("Environment Validator", () => {
       process.env.MONGODB_URI =
         process.env.MONGODB_URI || "mongodb://localhost:27017/test";
       process.env.JWT_SECRET = "short"; // Too short
-      process.env.TERMII_API_KEY = "test-key";
+      process.env.TWILIO_ACCOUNT_SID = "test-sid";
+      process.env.TWILIO_AUTH_TOKEN = "test-token";
+      process.env.TWILIO_PHONE_NUMBER = "test-phone";
       process.env.GROQ_API_KEY = "test-key";
 
       // Test that validateEnvironment executes without throwing

@@ -315,13 +315,13 @@ describe("Webhook Controller", () => {
   beforeEach(() => {
     mockReq = {
       body: {},
-      headers: { "x-termii-signature": "sig-123" },
+      headers: { "x-webhook-signature": "sig-123" },
     };
   });
 
-  describe("handleSMSResponse", () => {
+  describe("handleDeliveryReport", () => {
     test("should verify webhook signature", () => {
-      const signature = mockReq.headers["x-termii-signature"];
+      const signature = mockReq.headers["x-webhook-signature"];
 
       expect(signature).toBeTruthy();
     });

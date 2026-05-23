@@ -104,42 +104,37 @@ describe("Messaging Service", () => {
     });
   });
 
-  describe("Termii Integration", () => {
-    test("should format message for Termii API", () => {
+  describe("Twilio Integration", () => {
+    test("should format message for Twilio API", () => {
       const message = {
-        to: "2348012345678",
-        sms: "Your ANC reminder message",
-        type: "plain",
-        channel: "generic",
-        from: "MamaCheck",
+        to: "+2348012345678",
+        body: "Your ANC reminder message",
+        from: "+1234567890",
       };
 
       expect(message.to).toBeTruthy();
-      expect(message.sms).toBeTruthy();
-      expect(message.from).toBe("MamaCheck");
+      expect(message.body).toBeTruthy();
+      expect(message.from).toBe("+1234567890");
     });
 
-    test("should handle Termii API response", () => {
+    test("should handle Twilio API response", () => {
       const response = {
-        code: "01",
-        message_id: "1234567890",
-        message: "Message sent",
-        balance: 900,
+        sid: "SM1234567890",
+        status: "queued",
       };
 
-      expect(response.code).toBe("01");
-      expect(response.message_id).toBeTruthy();
+      expect(response.sid).toBeTruthy();
+      expect(response.status).toBe("queued");
     });
 
-    test("should handle Termii API errors", () => {
+    test("should handle Twilio API errors", () => {
       const error = {
-        code: "E001",
-        message: "Invalid API key",
-        status: "error",
+        code: 20003,
+        message: "Authenticate",
       };
 
-      expect(error.status).toBe("error");
       expect(error.code).toBeTruthy();
+      expect(error.message).toBeTruthy();
     });
   });
 });

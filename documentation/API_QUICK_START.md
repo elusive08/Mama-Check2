@@ -136,11 +136,11 @@ STOP = Opt out
 ### Webhook: Incoming SMS
 
 ```bash
-POST /webhook/termii/sms
+POST /webhook/sms
 {
   "from": "09012345678",
   "text": "1,2",              // Comma-separated symptoms
-  "message_id": "termii123"
+  "message_id": "msg123"
 }
 
 Response:
@@ -554,7 +554,7 @@ curl -X GET "http://localhost:3000/api/v1/reference/phcs/nearest?latitude=6.5244
 | API Documentation       | Check Swagger at /docs  |
 | Authentication Problems | Support team            |
 | Data Issues             | Database team           |
-| SMS Not Working         | Termii integration team |
+| SMS Not Working         | SMS service integration team |
 | Slack Alerts            | DevOps team             |
 
 ---

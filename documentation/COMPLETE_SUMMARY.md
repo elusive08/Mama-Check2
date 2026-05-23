@@ -54,9 +54,7 @@ PRD compliance gaps preventing production deployment:
    - sendSlackNotification(title, level, data): Generic alert
    - alertCronJobFailure(jobName, error): Cron monitoring
    - alertRedFlagDeliveryFailure(phone, symptoms, retries): SMS delivery
-   - alertLowWalletBalance(balance, threshold): Wallet monitoring
-   - alertDatabaseFailure(error): Connection monitoring
-   - alertTermiiAPIFailure(error, context): API monitoring
+   - alertSMSAPIFailure(error, context): SMS service monitoring
    - Color-coded severity levels
 ```
 
@@ -305,8 +303,9 @@ SLACK_WEBHOOK_URL=        # Slack alert destination
 
 ```
 DATABASE_URL=
-TERMII_API_KEY=
-TERMII_SENDER_ID=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
 JWT_SECRET=
 ```
 

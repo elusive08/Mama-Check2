@@ -8,6 +8,8 @@ import {
 } from "../middleware/rateLimiter.js";
 import express from "express";
 import { comparePassword, hashPassword } from "../utils/passwordUtils.js";
+import messagingService from "../services/messagingService.js";
+import config from "../config/index.js";
 
 const router = express.Router();
 
@@ -82,8 +84,8 @@ router.post("/login", generalLimiter, async (req, res) => {
 
     const token = jwt.sign(
       { userId: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN },
+      config.jwt.secret,
+      { expiresIn: config.jwt.expiresIn },
     );
 
     res.json({
@@ -175,22 +177,19 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
       { upsert: false },
     );
 
-    // Integrate with Termii to send OTP
-    const termiiApiKey = process.env.TERMII_API_KEY;
-    const termiiResponse = await fetch("https://api.termii.com/api/sms/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: phone,
-        from: "MamaCheck",
-        sms: `Your OTP is: ${otp}`,
-        type: "plain",
-        api_key: termiiApiKey,
-      }),
+    // Integrate with MessagingService to send OTP
+    const result = await messagingService.sendSMS({
+      to: phone,
+      content: `Your OTP is: ${otp}`,
+      type: "otp",
+      save: () => Promise.resolve(),
+      metadata: {},
+      retryCount: 0,
+      maxRetries: 3,
     });
 
-    if (!termiiResponse.ok) {
-      throw new Error("Failed to send OTP via Termii");
+    if (!result.success) {
+      throw new Error("Failed to send OTP via SMS service");
     }
 
     res.json({ message: "OTP sent successfully" });
@@ -291,8 +290,8 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { userId: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN },
+      config.jwt.secret,
+      { expiresIn: config.jwt.expiresIn },
     );
 
     res.json({

@@ -1,10 +1,10 @@
 import database from "./database.js";
-import termii from "./termii.js";
+import twilio from "./twilio.js";
 import groq from "./groq.js";
 
 export default {
   database,
-  termii,
+  twilio,
   groq,
   app: {
     name: "MamaCheck",

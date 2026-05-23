@@ -3,7 +3,9 @@ import logger from "./logger.js";
 const requiredEnvVars = [
   "MONGODB_URI",
   "JWT_SECRET",
-  "TERMII_API_KEY",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_PHONE_NUMBER",
   "GROQ_API_KEY",
 ];
 

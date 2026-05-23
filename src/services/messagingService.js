@@ -1,16 +1,39 @@
 import MessageQueue from "../models/MessageQueue.js";
-import termiiConfig from "../config/termii.js";
+import config from "../config/index.js";
 import SystemEvent from "../models/SystemEvent.js";
-import axios from "axios";
+import twilio from "twilio";
 
 class MessagingService {
   constructor() {
-    this.termiiApiKey = termiiConfig.apiKey;
-    this.senderId = termiiConfig.senderId;
+    this.accountSid = config.twilio.accountSid;
+    this.authToken = config.twilio.authToken;
+    this.fromNumber = config.twilio.phoneNumber;
+
+    console.log("DEBUG: MessagingService constructor", {
+      hasAccountSid: !!this.accountSid,
+      hasAuthToken: !!this.authToken,
+      nodeEnv: process.env.NODE_ENV,
+      mockSmsService: process.env.MOCK_SMS_SERVICE
+    });
+
+    // Initialize Twilio client if credentials are provided
+    if (this.accountSid && this.authToken) {
+      try {
+        this.client = twilio(this.accountSid, this.authToken);
+        console.log("DEBUG: Twilio client initialized successfully");
+      } catch (err) {
+        console.error("DEBUG: Failed to initialize Twilio client", err);
+      }
+    } else {
+      console.log("DEBUG: Twilio credentials missing, client not initialized");
+    }
+
     // Check if we're in test environment
     this.isTestEnvironment =
       process.env.NODE_ENV === "test" ||
       process.env.MOCK_SMS_SERVICE === "true";
+    
+    console.log("DEBUG: isTestEnvironment:", this.isTestEnvironment);
   }
 
   /**
@@ -34,14 +57,14 @@ class MessagingService {
   }
 
   /**
-   * Send SMS via Termii
+   * Send SMS via Twilio
    * @param {Object} message - Message object
    * @returns {Promise<Object>} Send result
    */
   async sendSMS(message) {
     try {
-      // In test environment, don't actually call Termii API
-      if (this.isTestEnvironment) {
+      // In test environment, don't actually call Twilio API
+      if (this.isTestEnvironment || !this.client) {
         console.log(`[MOCK] Sending SMS to ${message.to}: ${message.content}`);
 
         // Update message status for mock
@@ -49,8 +72,11 @@ class MessagingService {
         message.sentAt = new Date();
         message.deliveredAt = new Date();
         message.metadata = message.metadata || {};
-        message.metadata.termiiMessageId = `mock-${Date.now()}`;
-        await message.save();
+        message.metadata.externalMessageId = `mock-${Date.now()}`;
+        
+        if (typeof message.save === "function") {
+          await message.save();
+        }
 
         return {
           success: true,
@@ -60,52 +86,73 @@ class MessagingService {
         };
       }
 
-      // Real Termii API call for production/development
-      const response = await axios.post("https://api.termii.com/api/sms/send", {
-        to: message.to,
-        from: this.senderId,
-        sms: message.content,
-        type: "plain",
-        channel: "generic",
-        api_key: this.termiiApiKey,
+      // Format phone number for Twilio (E.164 format)
+      let formattedPhone = message.to;
+      if (!formattedPhone.startsWith("+")) {
+        if (formattedPhone.startsWith("0")) {
+          // Assume Nigeria (234) if starts with 0
+          formattedPhone = "+234" + formattedPhone.substring(1);
+        } else {
+          // Add + if missing
+          formattedPhone = "+" + formattedPhone;
+        }
+      }
+
+      // Real Twilio API call
+      const response = await this.client.messages.create({
+        body: message.content,
+        to: formattedPhone,
+        from: this.fromNumber,
       });
 
       // Update message status
       message.status = "delivered";
       message.sentAt = new Date();
       message.deliveredAt = new Date();
-      message.metadata.termiiMessageId = response.data.message_id;
-      await message.save();
+      message.metadata = message.metadata || {};
+      message.metadata.externalMessageId = response.sid;
+      
+      if (typeof message.save === "function") {
+        await message.save();
+      }
 
       return {
         success: true,
-        messageId: response.data.message_id,
+        messageId: response.sid,
         to: message.to,
+        status: response.status,
       };
     } catch (error) {
       console.error("SMS send failed:", error);
 
       // Handle retry logic
-      message.retryCount += 1;
+      if (message) {
+        message.retryCount = (message.retryCount || 0) + 1;
 
-      if (message.retryCount >= message.maxRetries) {
-        message.status = "failed";
-        message.error = error.message;
-        await message.save();
+        if (message.retryCount >= (message.maxRetries || 3)) {
+          message.status = "failed";
+          message.error = error.message;
+          
+          if (typeof message.save === "function") {
+            await message.save();
+          }
 
-        // Log to system events
-        await this.logFailedMessage(message, error);
-      } else {
-        // Reschedule for retry (exponential backoff)
-        const backoffMinutes = Math.pow(2, message.retryCount);
-        message.scheduledFor = new Date(Date.now() + backoffMinutes * 60000);
-        await message.save();
+          // Log to system events
+          await this.logFailedMessage(message, error);
+        } else {
+          // Reschedule for retry (exponential backoff)
+          const backoffMinutes = Math.pow(2, message.retryCount);
+          message.scheduledFor = new Date(Date.now() + backoffMinutes * 60000);
+          
+          if (typeof message.save === "function") {
+            await message.save();
+          }
+        }
       }
 
       return {
         success: false,
         error: error.message,
-        retryCount: message.retryCount,
       };
     }
   }
@@ -162,16 +209,20 @@ class MessagingService {
   }
 
   async logFailedMessage(message, error) {
-    await SystemEvent.create({
-      type: "SMS_FAILURE",
-      severity: "HIGH",
-      message: `SMS delivery failed for ${message.to}`,
-      details: {
-        messageId: message._id,
-        error: error.message,
-        retryCount: message.retryCount,
-      },
-    });
+    try {
+      await SystemEvent.create({
+        type: "SMS_FAILURE",
+        severity: "HIGH",
+        message: `SMS delivery failed for ${message.to}`,
+        details: {
+          messageId: message._id,
+          error: error.message,
+          retryCount: message.retryCount,
+        },
+      });
+    } catch (logError) {
+      console.error("Failed to log system event:", logError);
+    }
   }
 
   /**

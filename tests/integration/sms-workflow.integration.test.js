@@ -222,15 +222,16 @@ describe("SMS Workflow Integration Tests", () => {
         .post("/api/v1/pregnancies/register")
         .set("Authorization", `Bearer ${chewToken}`)
         .send({
-          womanDetails: {
-            name: "Test Woman",
-            phone: testPhone,
-            preferredLanguage: "en",
+          name: "Test Woman",
+          phone: testPhone,
+          preferredLanguage: "en",
+          address: {
+            lga: "Test LGA",
+            state: "Test State",
           },
           lmp: "2025-09-18",
           clinicName: "Test Clinic",
-          chewId,
-          otp: "123456", // Use a realistic OTP
+          otp: "123456",
         });
 
       expect([200, 201]).toContain(res.status);
@@ -394,6 +395,7 @@ describe("SMS Workflow Integration Tests", () => {
         .post(`/api/v1/pregnancies/${pregnancyId}/attended`)
         .set("Authorization", `Bearer ${chewToken}`)
         .send({
+          pregnancyId,
           milestoneNumber: 6,
         });
 
@@ -407,6 +409,7 @@ describe("SMS Workflow Integration Tests", () => {
         .post(`/api/v1/pregnancies/${pregnancyId}/attended`)
         .set("Authorization", `Bearer ${chewToken}`)
         .send({
+          pregnancyId,
           milestoneNumber: 6,
         });
 
@@ -415,6 +418,7 @@ describe("SMS Workflow Integration Tests", () => {
         .post(`/api/v1/pregnancies/${pregnancyId}/attended/undo`)
         .set("Authorization", `Bearer ${chewToken}`)
         .send({
+          pregnancyId,
           milestoneNumber: 6,
         });
 
@@ -438,6 +442,7 @@ describe("SMS Workflow Integration Tests", () => {
         .post(`/api/v1/pregnancies/${pregnancyId}/attended/undo`)
         .set("Authorization", `Bearer ${chewToken}`)
         .send({
+          pregnancyId,
           milestoneNumber: 6,
         });
 
@@ -451,6 +456,7 @@ describe("SMS Workflow Integration Tests", () => {
         .post(`/api/v1/pregnancies/${pregnancyId}/attended`)
         .set("Authorization", `Bearer ${chewToken}`)
         .send({
+          pregnancyId,
           milestoneNumber: 5,
         });
 
@@ -481,7 +487,7 @@ describe("SMS Workflow Integration Tests", () => {
     test("should get LGAs by state", async () => {
       const res = await request(app).get("/api/v1/reference/lgas/state/Kaduna");
 
-      expect(res.status).toBeOneOf([200, 404]);
+      expect([200, 404]).toContain(res.status);
     });
 
     test("should get PHCs by LGA", async () => {
@@ -489,7 +495,7 @@ describe("SMS Workflow Integration Tests", () => {
         "/api/v1/reference/phcs/lga/Kaduna North",
       );
 
-      expect(res.status).toBeOneOf([200, 404]);
+      expect([200, 404]).toContain(res.status);
     });
 
     test("should find nearest PHC by coordinates", async () => {
@@ -501,7 +507,7 @@ describe("SMS Workflow Integration Tests", () => {
           maxDistance: 5000,
         });
 
-      expect(res.status).toBeOneOf([200, 404]);
+      expect([200, 404]).toContain(res.status);
     });
   });
 
@@ -529,7 +535,7 @@ describe("SMS Workflow Integration Tests", () => {
         .post("/api/v1/auth/request-otp")
         .send({ phone: "invalid" });
 
-      expect(res.status).toBeOneOf([400, 500]);
+      expect([400, 500]).toContain(res.status);
     });
   });
 

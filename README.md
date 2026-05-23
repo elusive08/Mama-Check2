@@ -558,9 +558,9 @@ Each functional concern is an **independent, replaceable module** that communica
 | **Backend API**       | Express.js / Node.js + Swagger      | Registration logic, duplicate detection, inbound SMS webhook handler, triage logic, outbound message queue writer, role-based access control. All endpoints documented via Swagger (OpenAPI).          |
 | **Database**          | MongoDB                             | Collections: users, pregnancies, anc_visits, message_templates, message_queue, danger_reports, chew_profiles, system_events. Document-oriented storage for flexible schema.                            |
 | **Scheduler**         | Cron Job                            | Daily 07:00 WAT: recalculates gestational weeks, queues milestone reminders, queues weekly check-ins, flags missed visits.                                                                             |
-| **Messaging Gateway** | Termii (Transactional Route)        | Outbound SMS to women and CHEWs. DND-compliant transactional route. MamaCheck Sender ID. Delivery receipts logged.                                                                                     |
+| **Messaging Gateway** | Twilio                              | Outbound SMS to women and CHEWs.                                                                                                       |
 | **AI Layer**          | Groq API                            | Generates warm, non-alarming triage response language and CHEW follow-up checklists. Low-latency inference. Does not perform medical diagnosis. All outputs pass through fixed triage decision matrix. |
-| **Monitoring**        | Slack                               | Alerts for: cron job failures, CRITICAL RED-flag SMS delivery failures, low Termii wallet balance. Engineering on-call notified within 5 minutes.                                                      |
+| **Monitoring**        | Slack                               | Alerts for: cron job failures, CRITICAL RED-flag SMS delivery failures, low SMS quota. Engineering on-call notified within 5 minutes.                                                      |
 
 ### Non-Goals
 
@@ -672,8 +672,7 @@ All pregnant women should follow this visit schedule:
 
 ### SMS Compliance
 
-- All messages sent via **Termii transactional SMS route** (bypasses NCC Do Not Disturb registry)
-- **MamaCheck Sender ID** registered with NCC before go-live
+- All messages sent via **Twilio SMS gateway**
 - Explicit SMS consent obtained during registration
 - Users can opt out by replying **STOP**
 
@@ -713,7 +712,7 @@ All pregnant women should follow this visit schedule:
 
 1. Monitor engagement via CHEW dashboard weekly summary
 2. Track ANC completion rates and response to danger signs
-3. Ensure Termii SMS balance is maintained
+3. Ensure Twilio SMS quota is maintained
 4. Review Slack alerts for system health
 
 ---
