@@ -1,3 +1,10 @@
+import mongoose from "mongoose";
+import redis from "../config/redis.js";
+import logger from "../utils/logger.js";
+import missedVisitTracker from "../jobs/missedVisitTracker.js";
+import reminderScheduler from "../jobs/reminderScheduler.js";
+import weeklyCheckinScheduler from "../jobs/weeklyCheckinScheduler.js";
+
 export const gracefulShutdown = async (server) => {
   logger.info("Received shutdown signal, starting graceful shutdown...");
 
@@ -10,13 +17,15 @@ export const gracefulShutdown = async (server) => {
     logger.info("Database disconnected");
 
     // Close Redis connection
-    await redis.quit();
-    logger.info("Redis disconnected");
+    if (redis && redis.quit) {
+      await redis.quit();
+      logger.info("Redis disconnected");
+    }
 
-    // Stop cron jobs
-    missedVisitTracker.isRunning = false;
-    reminderScheduler.isRunning = false;
-    weeklyCheckinScheduler.isRunning = false;
+    // Stop cron jobs (if they exist and have isRunning flags)
+    if (missedVisitTracker) missedVisitTracker.isRunning = false;
+    if (reminderScheduler) reminderScheduler.isRunning = false;
+    if (weeklyCheckinScheduler) weeklyCheckinScheduler.isRunning = false;
 
     logger.info("Graceful shutdown completed");
     process.exit(0);

@@ -884,12 +884,15 @@ class CHEWService {
   /**
    * Helper: Get daily trend
    */
-  async getDailyTrend(chewId, _startDate) {
+  async getDailyTrend(chewId, startDate) {
     const days = [];
     const daysToShow = 14;
 
+    // Use the provided startDate or default to today
+    const baseDate = startDate ? new Date(startDate) : new Date();
+
     for (let i = daysToShow; i >= 0; i--) {
-      const date = new Date();
+      const date = new Date(baseDate);
       date.setDate(date.getDate() - i);
       date.setHours(0, 0, 0, 0);
 

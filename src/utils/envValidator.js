@@ -1,3 +1,10 @@
+import dotenv from "dotenv";
+
+// Load test environment variables if in test mode
+if (process.env.NODE_ENV === "test") {
+  dotenv.config({ path: ".env.test" });
+}
+
 const requiredEnvVars = [
   "MONGODB_URI",
   "JWT_SECRET",

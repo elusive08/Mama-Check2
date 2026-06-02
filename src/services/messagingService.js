@@ -13,7 +13,7 @@ class MessagingService {
       hasAccountSid: !!this.accountSid,
       hasAuthToken: !!this.authToken,
       nodeEnv: process.env.NODE_ENV,
-      mockSmsService: process.env.MOCK_SMS_SERVICE
+      mockSmsService: process.env.MOCK_SMS_SERVICE,
     });
 
     // Initialize Twilio client if credentials are provided
@@ -32,7 +32,7 @@ class MessagingService {
     this.isTestEnvironment =
       process.env.NODE_ENV === "test" ||
       process.env.MOCK_SMS_SERVICE === "true";
-    
+
     console.log("DEBUG: isTestEnvironment:", this.isTestEnvironment);
   }
 
@@ -62,30 +62,29 @@ class MessagingService {
    * @returns {Promise<Object>} Send result
    */
   async sendSMS(message) {
-    try {
-      // In test environment, don't actually call Twilio API
-      if (this.isTestEnvironment || !this.client) {
-        console.log(`[MOCK] Sending SMS to ${message.to}: ${message.content}`);
+    // Handle both plain objects and mongoose documents
+    const isMongooseDoc = typeof message.save === "function";
 
-        // Update message status for mock
+    if (this.isTestEnvironment || !this.client) {
+      console.log(`[MOCK] Sending SMS to ${message.to}: ${message.content}`);
+      if (isMongooseDoc) {
         message.status = "delivered";
         message.sentAt = new Date();
         message.deliveredAt = new Date();
         message.metadata = message.metadata || {};
         message.metadata.externalMessageId = `mock-${Date.now()}`;
-        
-        if (typeof message.save === "function") {
-          await message.save();
-        }
-
-        return {
-          success: true,
-          messageId: `mock-${Date.now()}`,
-          to: message.to,
-          mock: true,
-        };
+        await message.save();
       }
 
+      return {
+        success: true,
+        messageId: `mock-${Date.now()}`,
+        to: message.to,
+        mock: true,
+      };
+    }
+
+    try {
       // Format phone number for Twilio (E.164 format)
       let formattedPhone = message.to;
       if (!formattedPhone.startsWith("+")) {
@@ -111,7 +110,7 @@ class MessagingService {
       message.deliveredAt = new Date();
       message.metadata = message.metadata || {};
       message.metadata.externalMessageId = response.sid;
-      
+
       if (typeof message.save === "function") {
         await message.save();
       }
@@ -132,7 +131,7 @@ class MessagingService {
         if (message.retryCount >= (message.maxRetries || 3)) {
           message.status = "failed";
           message.error = error.message;
-          
+
           if (typeof message.save === "function") {
             await message.save();
           }
@@ -143,7 +142,7 @@ class MessagingService {
           // Reschedule for retry (exponential backoff)
           const backoffMinutes = Math.pow(2, message.retryCount);
           message.scheduledFor = new Date(Date.now() + backoffMinutes * 60000);
-          
+
           if (typeof message.save === "function") {
             await message.save();
           }

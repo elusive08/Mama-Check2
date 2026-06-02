@@ -23,15 +23,16 @@ export const sendOTP = async (phone) => {
     console.log("📤 Sending OTP via MessagingService to:", phone);
 
     // Use MessagingService to send SMS
-    const result = await messagingService.sendSMS({
+    const messageObject = {
       to: phone,
       content: messageContent,
       type: "otp",
-      save: () => Promise.resolve(), // Mock save if sendSMS expects a mongoose document
       metadata: {},
       retryCount: 0,
       maxRetries: 3,
-    });
+    };
+
+    const result = await messagingService.sendSMS(messageObject);
 
     if (result.success) {
       console.log(`✅ OTP sent successfully to ${phone}`);

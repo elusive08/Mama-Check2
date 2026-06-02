@@ -46,20 +46,23 @@ Requirements:
 - Include: "MamaCheck is a safety guide, not a doctor"`;
 
     try {
-      const message = await this.client.messages.create({
+      // FIXED: Used chat.completions.create() instead of messages.create()
+      const chatCompletion = await this.client.chat.completions.create({
         model: this.model,
         max_tokens: 200,
         messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
           {
             role: "user",
             content: userPrompt,
           },
         ],
-        system: systemPrompt,
       });
 
-      const responseText =
-        message.content[0].type === "text" ? message.content[0].text : null;
+      const responseText = chatCompletion.choices[0]?.message?.content;
 
       if (!responseText) {
         console.warn("Invalid response from Groq");
@@ -93,7 +96,8 @@ Provide 3-4 clear action items in bullet format.
 Keep it concise and actionable.`;
 
     try {
-      const message = await this.client.messages.create({
+      // FIXED: Use chat.completions.create() instead of messages.create()
+      const chatCompletion = await this.client.chat.completions.create({
         model: this.model,
         max_tokens: 300,
         messages: [
@@ -104,7 +108,7 @@ Keep it concise and actionable.`;
         ],
       });
 
-      return message.content[0].type === "text" ? message.content[0].text : null;
+      return chatCompletion.choices[0]?.message?.content || null;
     } catch (error) {
       console.error("Error generating CHEW checklist:", error);
       return null;

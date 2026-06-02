@@ -7,7 +7,7 @@ const router = express.Router();
 
 // GET attendance history - matches test expectation
 router.get(
-  "/pregnancies/:pregnancyId/visits",
+  "/pregnancies/:pregnancyId/attendance-history",
   authMiddleware,
   async (req, res) => {
     try {
