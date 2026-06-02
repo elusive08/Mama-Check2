@@ -5,8 +5,9 @@ logs/
 .github/
 .env.local
 .env.development
-.env.test
+.env.production.example
 .env.production
 .env.examples
 scripts/
 coverage/
+.env.test
