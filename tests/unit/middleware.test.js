@@ -16,7 +16,10 @@ const mockFn = (impl = undefined) => {
   fn.toHaveBeenCalled = () => calls.length > 0;
   fn.toHaveBeenCalledWith = (...expected) =>
     calls.some((c) => JSON.stringify(c) === JSON.stringify(expected));
-  fn.mockReturnThis = () => { fn.returnValue = fn; return fn; };
+  fn.mockReturnThis = () => {
+    fn.returnValue = fn;
+    return fn;
+  };
   return fn;
 };
 const vi = { fn: mockFn };
@@ -80,7 +83,16 @@ describe("ErrorHandler and AppError", () => {
   describe("Request Logging Middleware", () => {
     test("should attach request log object", () => {
       const req = { id: "test-id-123", method: "GET", path: "/test" };
-      const res = { json: vi.fn() };
+      const res = {
+        json: vi.fn(),
+        on: vi.fn((event, callback) => {
+          if (event === "finish") {
+            // Simulate finishing the response
+            setTimeout(callback, 10);
+          }
+        }),
+        locals: {},
+      };
       const next = vi.fn();
 
       requestLoggingMiddleware(req, res, next);
@@ -95,14 +107,22 @@ describe("ErrorHandler and AppError", () => {
 
     test("should track response duration", () => {
       const req = { id: "test-id", method: "GET", path: "/test" };
-      const res = { json: vi.fn(), locals: {} };
+      const res = {
+        json: vi.fn(),
+        on: vi.fn((event, callback) => {
+          if (event === "finish") {
+            // Simulate finishing the response
+            setTimeout(callback, 10);
+          }
+        }),
+        locals: {},
+      };
       const next = vi.fn();
 
       requestLoggingMiddleware(req, res, next);
 
-      // Simulate json response
-      res.json({ success: true });
-
+      // Verify that res.on was called with 'finish' event
+      expect(res.on.calls.length).toBeGreaterThan(0);
       expect(res.locals).toBeDefined();
     });
   });

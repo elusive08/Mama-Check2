@@ -20,4 +20,6 @@ export default {
   detectLeaks: false,
   verbose: true,
   bail: false,
+  openHandlesTimeout: 1000,
+  workerIdleMemoryLimit: "512MB",
 };

@@ -1,56 +1,45 @@
 import express from "express";
 import referenceDataController from "../controllers/referenceDataController.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { generalLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
-// Public endpoints (no auth required for reads)
-router.get("/lgas", (req, res) =>
+// Public endpoints (no auth required for reads) - with rate limiting
+router.get("/lgas", generalLimiter, (req, res) =>
   referenceDataController.getAllLGAs(req, res),
 );
-router.get("/states", (req, res) =>
+router.get("/states", generalLimiter, (req, res) =>
   referenceDataController.getAllStates(req, res),
 );
-router.get("/lgas/state/:state", (req, res) =>
+router.get("/lgas/state/:state", generalLimiter, (req, res) =>
   referenceDataController.getLGAsByState(req, res),
 );
-router.get("/phcs/lga/:lga", (req, res) =>
+router.get("/phcs/lga/:lga", generalLimiter, (req, res) =>
   referenceDataController.getPHCsByLGA(req, res),
 );
-router.get("/phcs/state/:state", (req, res) =>
+router.get("/phcs/state/:state", generalLimiter, (req, res) =>
   referenceDataController.getPHCsByState(req, res),
 );
-router.get("/phcs/nearest", (req, res) =>
+router.get("/phcs/nearest", generalLimiter, (req, res) =>
   referenceDataController.getNearestPHC(req, res),
 );
 
 // Admin only endpoints
-router.post(
-  "/lgas",
-  authMiddleware,
-  requireRole("admin"),
-  (req, res) => referenceDataController.createLGA(req, res),
+router.post("/lgas", authMiddleware, requireRole("admin"), (req, res) =>
+  referenceDataController.createLGA(req, res),
 );
 
-router.post(
-  "/phcs",
-  authMiddleware,
-  requireRole("admin"),
-  (req, res) => referenceDataController.createPHC(req, res),
+router.post("/phcs", authMiddleware, requireRole("admin"), (req, res) =>
+  referenceDataController.createPHC(req, res),
 );
 
-router.put(
-  "/lgas/:lgaId",
-  authMiddleware,
-  requireRole("admin"),
-  (req, res) => referenceDataController.updateLGA(req, res),
+router.put("/lgas/:lgaId", authMiddleware, requireRole("admin"), (req, res) =>
+  referenceDataController.updateLGA(req, res),
 );
 
-router.put(
-  "/phcs/:phcId",
-  authMiddleware,
-  requireRole("admin"),
-  (req, res) => referenceDataController.updatePHC(req, res),
+router.put("/phcs/:phcId", authMiddleware, requireRole("admin"), (req, res) =>
+  referenceDataController.updatePHC(req, res),
 );
 
 router.delete(

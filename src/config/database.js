@@ -13,8 +13,6 @@ class Database {
         process.env.MONGODB_URI || "mongodb://localhost:27017/mamacheck";
 
       await mongoose.connect(mongoURI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 15000,
         socketTimeoutMS: 45000,

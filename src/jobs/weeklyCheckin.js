@@ -13,6 +13,9 @@ class WeeklyCheckinScheduler {
       endHour: 20, // 8 PM
     };
     this.reminderThreshold = 24; // hours before sending reminder
+    this.isRunning = false;
+    this.lastRunTime = null;
+    this.jobTimeout = 30 * 60 * 1000; // 30 minutes
   }
 
   /**
@@ -42,12 +45,33 @@ class WeeklyCheckinScheduler {
    * Process weekly check-ins for all eligible women
    */
   async processWeeklyCheckins() {
+    // Check if previous run is still hanging
     if (this.isRunning) {
-      logger.warn("Weekly check-in processor already running, skipping");
-      return;
+      const timeSinceStart = Date.now() - this.lastRunTime;
+      if (timeSinceStart > this.jobTimeout) {
+        logger.error(
+          `Weekly checkin scheduler is HUNG (${Math.round(timeSinceStart / 1000)}s). Force resetting state.`,
+        );
+        this.isRunning = false;
+
+        await SystemEvent.create({
+          type: "SCHEDULER_HANG_DETECTED",
+          severity: "CRITICAL",
+          message: "Weekly checkin scheduler detected as hung - force reset",
+          details: {
+            jobType: "weeklyCheckinScheduler",
+            hangDurationMs: timeSinceStart,
+            timestamp: new Date(),
+          },
+        });
+      } else {
+        logger.warn("Weekly check-in processor already running, skipping");
+        return;
+      }
     }
 
     this.isRunning = true;
+    this.lastRunTime = Date.now();
     logger.info("Starting weekly check-in processing...");
 
     try {

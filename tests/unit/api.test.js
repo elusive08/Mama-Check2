@@ -2,6 +2,16 @@ import request from "supertest";
 import app from "../../src/app.js";
 
 describe("API Integration Tests", () => {
+  beforeAll(async () => {
+    // Database and Redis lifecycle is managed by the global test setup (tests/setup/setup.js).
+    // Nothing to initialise here.
+  });
+
+  afterAll(async () => {
+    // Teardown (disconnect, redis.quit) is handled by the global test setup.
+    // Nothing to close here.
+  });
+
   describe("Health endpoint", () => {
     test("GET /health returns healthy status", async () => {
       const response = await request(app).get("/health").expect(200);

@@ -10,6 +10,7 @@ import express from "express";
 import { comparePassword, hashPassword } from "../utils/passwordUtils.js";
 import messagingService from "../services/messagingService.js";
 import config from "../config/index.js";
+import otpStore from "../utils/otpStore.js";
 
 const router = express.Router();
 
@@ -124,7 +125,6 @@ router.post("/login", generalLimiter, async (req, res) => {
  *       500:
  *         description: Server error
  */
-// Get current user
 router.get("/me", authMiddleware, async (req, res) => {
   res.json(req.user);
 });
@@ -160,20 +160,26 @@ router.get("/me", authMiddleware, async (req, res) => {
  *       500:
  *         description: Server error
  */
-// Request OTP
 router.post("/request-otp", registrationLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
+
+    // Validate Nigerian phone number format
+    const phoneRegex = /^(\+?234|0)[789]\d{9}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({ error: "Invalid phone number format" });
+    }
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
-    // Store OTP in database (MVP implementation)
+    // Store OTP in Redis via otpStore (key: otp:<phone>) — required for verify-otp
+    await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
+
+    // Also persist to MongoDB for users that already exist
     await User.findOneAndUpdate(
       { phone },
-      {
-        otp,
-        otpExpiry,
-      },
+      { otp, otpExpiry },
       { upsert: false },
     );
 
@@ -257,7 +263,6 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
  *       500:
  *         description: Server error
  */
-// Verify OTP
 router.post("/verify-otp", registrationLimiter, async (req, res) => {
   try {
     const { phone, otp } = req.body;

@@ -28,13 +28,30 @@ export const requestLoggingMiddleware = (req, res, next) => {
     timestamp: new Date().toISOString(),
   };
 
-  // Override res.json to log response details
-  const originalJson = res.json;
-  res.json = function (data) {
+  // Use 'finish' event to capture all response methods (res.json, res.send, res.end, etc.)
+  res.on("finish", () => {
     const duration = Date.now() - startTime;
     res.locals.duration = duration;
-    return originalJson.call(this, data);
-  };
+
+    // Log response details
+    const logData = {
+      requestId: req.id,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: duration,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Log at appropriate level based on status code
+    if (res.statusCode >= 500) {
+      console.error("Response error:", logData);
+    } else if (res.statusCode >= 400) {
+      console.warn("Response warning:", logData);
+    } else {
+      console.log("Response ok:", logData);
+    }
+  });
 
   next();
 };

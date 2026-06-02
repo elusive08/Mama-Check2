@@ -729,11 +729,22 @@ class DashboardController {
 
   async getDailyTrend(chewId, startDate) {
     const days = [];
-    const current = new Date(startDate);
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
-    while (current <= today) {
+    // Calculate total days and cap data points to 30 for performance
+    const totalDays = Math.ceil((today - startDate) / (1000 * 60 * 60 * 24));
+    const maxPoints = 30;
+    const step = Math.max(1, Math.ceil(totalDays / maxPoints));
+
+    // Use for loop with explicit iterations to ensure termination
+    for (let iterations = 0; iterations < maxPoints; iterations++) {
+      const current = new Date(startDate);
+      current.setDate(current.getDate() + iterations * step);
+
+      // Stop if we've passed today
+      if (current > today) break;
+
       const date = new Date(current);
       date.setHours(0, 0, 0, 0);
 
@@ -757,8 +768,6 @@ class DashboardController {
           triageOutcome: "RED",
         }),
       });
-
-      current.setDate(current.getDate() + 1); // move to next day
     }
 
     return days;
@@ -768,12 +777,26 @@ class DashboardController {
     const nextDate = new Date(date);
     nextDate.setDate(nextDate.getDate() + 1);
 
+    // Get all pregnancies for this CHEW (single query)
     const pregnancies = await Pregnancy.find({ chewId });
+    const pregnancyIds = pregnancies.map((p) => p._id);
+
+    // Get all ANC records in a single query (not N+1)
+    const ancPregnancies = await ANCPregnancy.find({
+      pregnancyId: { $in: pregnancyIds },
+    });
+
+    // Create a map for O(1) lookups
+    const ancMap = new Map(
+      ancPregnancies.map((anc) => [anc.pregnancyId.toString(), anc]),
+    );
+
     let scheduled = 0;
     let completed = 0;
 
+    // Now iterate through pregnancies with the map (no additional queries)
     for (const pregnancy of pregnancies) {
-      const anc = await ANCPregnancy.findOne({ pregnancyId: pregnancy._id });
+      const anc = ancMap.get(pregnancy._id.toString());
       const dayVisits =
         anc?.fmohSchedule.filter(
           (v) => v.scheduledDate >= date && v.scheduledDate < nextDate,
@@ -787,13 +810,21 @@ class DashboardController {
   }
 
   async getCHEWANCCompletionRate(chewId) {
+    // Get all pregnancies for this CHEW (single query)
     const pregnancies = await Pregnancy.find({ chewId });
+    const pregnancyIds = pregnancies.map((p) => p._id);
+
+    // Get all ANC records in a single query (not N+1)
+    const ancPregnancies = await ANCPregnancy.find({
+      pregnancyId: { $in: pregnancyIds },
+    });
+
     let totalVisits = 0;
     let completedVisits = 0;
 
-    for (const pregnancy of pregnancies) {
-      const anc = await ANCPregnancy.findOne({ pregnancyId: pregnancy._id });
-      if (anc) {
+    // Iterate through ANC records (already fetched)
+    for (const anc of ancPregnancies) {
+      if (anc?.fmohSchedule) {
         totalVisits += anc.fmohSchedule.length;
         completedVisits += anc.fmohSchedule.filter((v) => v.attended).length;
       }

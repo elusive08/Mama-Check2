@@ -1,9 +1,12 @@
+import twilio from "twilio";
 import MessagingService from "../services/messagingService.js";
 import Pregnancy from "../models/Pregnancy.js";
 import DangerReport from "../models/DangerReport.js";
 import ANCPregnancy from "../models/ANCPregnancy.js";
 import MessageQueue from "../models/MessageQueue.js";
 import User from "../models/User.js";
+import redis from "../config/redis.js";
+import logger from "../utils/logger.js";
 import {
   containsOptOutKeyword,
   handleOptOut,
@@ -15,34 +18,73 @@ class WebhookController {
     this.messagingService = MessagingService;
   }
 
+  validateTwilioSignature(req) {
+    // Skip validation in development
+    if (process.env.NODE_ENV !== "production") {
+      return true;
+    }
+
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const signature = req.headers["x-twilio-signature"];
+    const webhookBaseUrl = process.env.WEBHOOK_BASE_URL;
+
+    if (!authToken || !signature || !webhookBaseUrl) {
+      logger.error("Missing Twilio validation configuration");
+      return false;
+    }
+
+    return twilio.validateRequest(authToken, signature, req.body);
+  }
+
   /**
    * Handle incoming SMS
    */
   async handleIncomingSMS(req, res) {
+    const messageId = req.body.message_id;
+
+    // Check for duplicate webhook
+    const duplicateKey = `webhook:processed:${messageId}`;
+    const isDuplicate = await redis.set(
+      duplicateKey,
+      "true",
+      "EX",
+      86400,
+      "NX",
+    );
+    if (!isDuplicate) {
+      logger.info(`Duplicate webhook received: ${messageId}`);
+      return res.status(200).json({ success: true, duplicate: true });
+    }
+
+    // Store with 24-hour TTL
+    await redis.setex(duplicateKey, 86400, "true");
+
+    // ADDED: Signature validation
+    if (!this.validateTwilioSignature(req)) {
+      logger.error("Invalid Twilio signature - rejecting webhook");
+      return res.status(403).json({ error: "Invalid signature" });
+    }
+
     try {
       const { from, text, message_id } = req.body;
-      console.log(`📱 Processing SMS from ${from}: ${text}`);
+      logger.info(`Processing SMS from ${from}: ${text}`);
 
-      // Handle opt-out first (early return)
       if (containsOptOutKeyword(text)) {
         return await this.handleOptOutRequest(from, res);
       }
 
-      // Find and validate user
       const user = await this.findAndValidateUser(from);
       if (!user)
         return res
           .status(404)
           .json({ error: "User not found", status: "ignored" });
 
-      // Find and validate pregnancy
       const pregnancy = await this.findAndValidatePregnancy(user);
       if (!pregnancy)
         return res
           .status(404)
           .json({ error: "Pregnancy not found", status: "ignored" });
 
-      // Process the SMS and return response
       return await this.processSMSContent(
         user,
         pregnancy,
@@ -51,21 +93,32 @@ class WebhookController {
         res,
       );
     } catch (error) {
-      console.error("Webhook error:", error);
+      logger.error("Webhook error:", error);
       return res.status(500).json({ error: error.message });
     }
   }
 
   async handleOptOutRequest(from, res) {
-    console.log(`Opt-out request from ${from}`);
+    logger.info(`Opt-out request from ${from}`);
+
+    const optOutKey = `optout:processed:${from}`;
+    const processed = await redis.get(optOutKey);
+    if (processed) {
+      return res.status(200).json({
+        success: true,
+        status: "opt_out_processed",
+        message: "User has been unsubscribed",
+      });
+    }
 
     const user = await User.findOne({ phone: from });
 
     if (user) {
       await handleOptOut(from, "User sent STOP keyword via SMS");
       await sendOptOutConfirmation(from, this.messagingService);
+      await redis.setex(optOutKey, 3600, "true");
     } else {
-      console.log(`Opt-out request from unknown number: ${from}`);
+      logger.warn(`Opt-out request from unknown number: ${from}`);
     }
 
     return res.status(200).json({
@@ -78,7 +131,7 @@ class WebhookController {
   async findAndValidateUser(phone) {
     const user = await User.findOne({ phone });
     if (!user) {
-      console.log(`User not found for number: ${phone}`);
+      logger.debug(`User not found for number: ${phone}`);
       return null;
     }
     return user;
@@ -90,18 +143,18 @@ class WebhookController {
     );
 
     if (!pregnancy) {
-      console.log(`No pregnancy found for user: ${user._id}`);
+      logger.debug(`No pregnancy found for user: ${user._id}`);
       return null;
     }
 
-    console.log(`Found pregnancy for ${user.name}: ${pregnancy._id}`);
+    logger.debug(`Found pregnancy for ${user.name}: ${pregnancy._id}`);
     return pregnancy;
   }
 
   async processSMSContent(user, pregnancy, text, message_id, res) {
     // Parse symptoms
     const symptoms = this.parseSymptoms(text);
-    console.log(`Parsed symptoms:`, symptoms);
+    logger.debug(`Parsed symptoms: ${JSON.stringify(symptoms)}`);
 
     // Determine severity
     const severity = this.determineSeverity(symptoms);
@@ -124,7 +177,7 @@ class WebhookController {
     );
 
     // Log response
-    console.log(`Response to ${user.phone}: ${triageResult.message}`);
+    logger.info(`Response to ${user.phone}: ${triageResult.message}`);
 
     // Handle RED alerts
     if (triageResult.severity === "RED") {
@@ -203,8 +256,8 @@ class WebhookController {
 
     // If pregnancy doesn't have a CHEW, try to find one by LGA or default
     if (!chewId) {
-      console.log(
-        "⚠️ No CHEW associated with pregnancy, attempting to find one...",
+      logger.warn(
+        `No CHEW associated with pregnancy, attempting to find one...`,
       );
       // In production, would query by LGA or other logic
       // For now, just log it
@@ -224,7 +277,7 @@ class WebhookController {
     });
 
     await report.save();
-    console.log(`✅ Danger report saved: ${report._id}`);
+    logger.info(`Danger report saved: ${report._id}`);
 
     // Update ANC pregnancy record if it exists
     const ancPregnancy = await ANCPregnancy.findOne({
@@ -243,20 +296,6 @@ class WebhookController {
     }
 
     return report;
-  }
-
-  async sendTriageResponse(pregnancy, triageResult) {
-    await this.messagingService.queueMessage({
-      to: pregnancy.womanId.phone,
-      content: triageResult.message,
-      language: pregnancy.womanId.preferredLanguage,
-      type: "triage_response",
-      priority: "high",
-      metadata: {
-        pregnancyId: pregnancy._id,
-        severity: triageResult.severity,
-      },
-    });
   }
 
   async handleRedAlert(pregnancy, triageResult, report) {
@@ -323,7 +362,7 @@ class WebhookController {
         updated: !!updatedMessage,
       });
     } catch (error) {
-      console.error("Delivery report error:", error);
+      logger.error("Delivery report error:", error);
       res.status(200).json({ status: "error" }); // Return 200 to acknowledge
     }
   }
@@ -332,63 +371,60 @@ class WebhookController {
    * Simulate SMS for testing (development only)
    */
   async simulateSMS(req, res) {
-    try {
-      console.log("=== SIMULATE SMS CALLED ===");
-      console.log("Request body:", req.body);
-      console.log("NODE_ENV:", process.env.NODE_ENV);
+    // Defence in depth - never allow in production
+    if (process.env.NODE_ENV === "production") {
+      return res.status(404).json({ error: "Not found" });
+    }
 
-      const { from, text } = req.body;
+    console.log("=== SIMULATE SMS CALLED ===");
+    console.log("Request body:", req.body);
 
-      if (!from || !text) {
-        console.log("Missing parameters!");
-        return res
-          .status(400)
-          .json({ error: "Missing from or text parameter" });
-      }
+    const { from, text } = req.body;
 
-      console.log(`📱 Simulating SMS from ${from}: ${text}`);
+    if (!from || !text) {
+      console.log("Missing parameters!");
+      return res.status(400).json({ error: "Missing from or text parameter" });
+    }
 
-      // Create mock request for handleIncomingSMS
-      const mockReq = {
-        body: {
-          from,
-          text,
-          message_id: `sim-${Date.now()}`,
-        },
-      };
+    console.log(`📱 Simulating SMS from ${from}: ${text}`);
 
-      // Create a response handler that captures the response
-      let responseData = null;
-      let responseStatus = null;
+    const mockReq = {
+      body: {
+        from,
+        text,
+        message_id: `sim-${Date.now()}`,
+      },
+    };
 
-      const mockRes = {
-        status: (code) => {
-          responseStatus = code;
-          return {
-            json: (data) => {
-              responseData = data;
-              console.log(`Would send response status ${code}:`, data);
-            },
-          };
-        },
-        json: (data) => {
-          responseData = data;
-          console.log(`Would send response json:`, data);
-        },
-      };
+    let responseData = null;
+    let responseStatus = null;
 
-      // Call the handler
-      await this.handleIncomingSMS(mockReq, mockRes);
+    const mockRes = {
+      status: (code) => {
+        responseStatus = code;
+        return {
+          // Return a resolved Promise so that callers using
+          // `return res.status(x).json(...)` are properly awaited.
+          // Without this, handleOptOut's DB write races with simulateSMS
+          // completing, causing the test to read stale user state.
+          json: (data) => {
+            responseData = data;
+            return Promise.resolve(data);
+          },
+        };
+      },
+      json: (data) => {
+        responseData = data;
+        return Promise.resolve(data);
+      },
+    };
 
-      // Send the actual response
-      if (responseStatus) {
-        res.status(responseStatus).json(responseData);
-      } else {
-        res.status(200).json(responseData || { success: true });
-      }
-    } catch (error) {
-      console.error("Simulation error:", error);
-      res.status(500).json({ error: error.message });
+    await this.handleIncomingSMS(mockReq, mockRes);
+
+    if (responseStatus) {
+      res.status(responseStatus).json(responseData);
+    } else {
+      res.status(200).json(responseData || { success: true });
     }
   }
 }

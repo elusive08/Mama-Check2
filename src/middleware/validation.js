@@ -1,11 +1,12 @@
 import Joi from "joi";
 
+// Unified Nigerian phone number regex - strict validation
+const NIGERIAN_PHONE_REGEX = /^(\+?234|0)[789]\d{9}$/;
+
 const validateRegistration = (req, res, next) => {
   const schema = Joi.object({
     name: Joi.string().required().min(2).max(100),
-    phone: Joi.string()
-      .required()
-      .pattern(/^\d{10,14}$/),
+    phone: Joi.string().required().pattern(NIGERIAN_PHONE_REGEX),
     address: Joi.object({
       street: Joi.string(),
       lga: Joi.string().required(),
@@ -20,7 +21,7 @@ const validateRegistration = (req, res, next) => {
     gravida: Joi.number().min(0).max(20),
     trustedContact: Joi.object({
       name: Joi.string(),
-      phone: Joi.string().pattern(/^\d{10,14}$/),
+      phone: Joi.string().pattern(NIGERIAN_PHONE_REGEX),
       relationship: Joi.string(),
     }),
     otp: Joi.string().length(6).required(),
@@ -60,4 +61,9 @@ const validateVisitAttendance = (req, res, next) => {
   next();
 };
 
-export { validateRegistration, validateSymptomReport, validateVisitAttendance };
+export {
+  validateRegistration,
+  validateSymptomReport,
+  validateVisitAttendance,
+  NIGERIAN_PHONE_REGEX,
+};

@@ -98,13 +98,22 @@ class CHEWController {
         (p) => p.status === "active",
       ).length;
 
+      // Get all ANC records in a single query (not N+1)
+      const pregnancyIds = pregnancies.map((p) => p._id);
+      const ancPregnancies = await ANCPregnancy.find({
+        pregnancyId: { $in: pregnancyIds },
+      });
+
+      // Create a map for O(1) lookups
+      const ancMap = new Map(
+        ancPregnancies.map((anc) => [anc.pregnancyId.toString(), anc]),
+      );
+
       // Get ANC completion stats
       let totalVisitsCompleted = 0;
       let totalScheduledVisits = 0;
       for (const pregnancy of pregnancies) {
-        const ancPregnancy = await ANCPregnancy.findOne({
-          pregnancyId: pregnancy._id,
-        });
+        const ancPregnancy = ancMap.get(pregnancy._id.toString());
         if (ancPregnancy) {
           totalVisitsCompleted += ancPregnancy.fmohSchedule.filter(
             (v) => v.attended,
@@ -643,11 +652,20 @@ class CHEWController {
       status: "active",
     }).populate("womanId");
 
+    // Get all ANC records in a single query (not N+1)
+    const pregnancyIds = pregnancies.map((p) => p._id);
+    const ancPregnancies = await ANCPregnancy.find({
+      pregnancyId: { $in: pregnancyIds },
+    });
+
+    // Create a map for O(1) lookups
+    const ancMap = new Map(
+      ancPregnancies.map((anc) => [anc.pregnancyId.toString(), anc]),
+    );
+
     const upcoming = [];
     for (const pregnancy of pregnancies) {
-      const ancPregnancy = await ANCPregnancy.findOne({
-        pregnancyId: pregnancy._id,
-      });
+      const ancPregnancy = ancMap.get(pregnancy._id.toString());
       const nextVisit = ancPregnancy?.fmohSchedule.find(
         (v) => !v.attended && v.scheduledDate <= endDate,
       );
@@ -661,18 +679,26 @@ class CHEWController {
   }
 
   async getTotalScheduledVisits(pregnancyIds) {
+    // Get all ANC records in a single query (not N+1)
+    const ancPregnancies = await ANCPregnancy.find({
+      pregnancyId: { $in: pregnancyIds },
+    });
+
     let total = 0;
-    for (const id of pregnancyIds) {
-      const anc = await ANCPregnancy.findOne({ pregnancyId: id });
+    for (const anc of ancPregnancies) {
       total += anc?.fmohSchedule.length || 0;
     }
     return total;
   }
 
   async getCompletedVisits(pregnancyIds, startDate) {
+    // Get all ANC records in a single query (not N+1)
+    const ancPregnancies = await ANCPregnancy.find({
+      pregnancyId: { $in: pregnancyIds },
+    });
+
     let completed = 0;
-    for (const id of pregnancyIds) {
-      const anc = await ANCPregnancy.findOne({ pregnancyId: id });
+    for (const anc of ancPregnancies) {
       if (anc) {
         completed += anc.fmohSchedule.filter(
           (v) => v.attended && v.attendedDate >= startDate,

@@ -68,6 +68,13 @@ const userSchema = new mongoose.Schema(
       consentDate: Date,
       withdrawDate: Date,
     },
+    phoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    phoneVerifiedAt: {
+      type: Date,
+    },
     optOut: {
       isOptedOut: {
         type: Boolean,

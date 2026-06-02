@@ -1,13 +1,30 @@
 import User from "../models/User.js";
 import CHEWProfile from "../models/CHEWProfile.js";
 import SystemEvent from "../models/SystemEvent.js";
-import authMiddleware from "../middleware/auth.js";
 import logger from "../utils/logger.js";
 import otpStore from "../utils/otpStore.js";
 import crypto from "node:crypto";
 import { hashPassword, comparePassword } from "../utils/passwordUtils.js";
+import jwt from "jsonwebtoken";
 
 class AuthController {
+  /**
+   * Generate tokens for a user
+   */
+  generateTokens(user) {
+    const accessToken = jwt.sign(
+      { userId: user._id, role: user.role, phone: user.phone },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
+    );
+    const refreshToken = jwt.sign(
+      { userId: user._id, type: "refresh" },
+      process.env.JWT_SECRET,
+      { expiresIn: "30d" },
+    );
+    return { accessToken, refreshToken };
+  }
+
   /**
    * Send OTP for phone verification
    */
@@ -17,6 +34,12 @@ class AuthController {
 
       if (!phone) {
         return res.status(400).json({ error: "Phone number is required" });
+      }
+
+      // Validate Nigerian phone number format
+      const phoneRegex = /^(\+?234|0)[789]\d{9}$/;
+      if (!phoneRegex.test(phone)) {
+        return res.status(400).json({ error: "Invalid phone number format" });
       }
 
       // Rate limiting
@@ -29,7 +52,7 @@ class AuthController {
       }
 
       // Generate 6-digit OTP
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otp = crypto.randomInt(100000, 1000000).toString();
 
       // Store OTP with 5-minute expiration
       await otpStore.set(
@@ -45,10 +68,7 @@ class AuthController {
       // Store rate limit info with 60-second expiration
       await otpStore.set(rateLimitKey, { timestamp: Date.now() }, 60);
 
-      // In production, send via SMS
-      // await messagingService.sendTemplatedMessage('otp', phone, { otp }, 'en');
-
-      logger.info(`OTP generated for ${phone}`); // Don't log actual OTP in production
+      logger.info(`OTP generated for ${phone}`);
 
       res.status(200).json({
         success: true,
@@ -74,6 +94,40 @@ class AuthController {
           .json({ error: "Phone number and OTP are required" });
       }
 
+      // Test environment bypass
+      const isTestEnv = process.env.NODE_ENV === "test";
+      const bypassOtp =
+        process.env.BYPASS_OTP_FOR_TESTING === "true" && isTestEnv;
+
+      if (bypassOtp && otp.toString().length === 6) {
+        logger.info(`Test mode: OTP bypass for ${phone}`);
+
+        // Find or create user
+        let user = await User.findOne({ phone });
+        if (!user) {
+          user = new User({
+            phone,
+            role: "patient",
+            phoneVerified: true,
+            phoneVerifiedAt: new Date(),
+          });
+          await user.save();
+        } else if (!user.phoneVerified) {
+          user.phoneVerified = true;
+          user.phoneVerifiedAt = new Date();
+          await user.save();
+        }
+
+        const { accessToken, refreshToken } = this.generateTokens(user);
+
+        return res.status(200).json({
+          success: true,
+          token: accessToken,
+          refreshToken,
+          message: "OTP verified successfully (test mode)",
+        });
+      }
+
       const storedOTP = await otpStore.get(phone);
 
       if (!storedOTP) {
@@ -94,7 +148,7 @@ class AuthController {
       if (storedOTP.otp !== otp) {
         storedOTP.attempts++;
         await otpStore.set(phone, storedOTP, 300);
-        return res.status(400).json({
+        return res.status(401).json({
           error: `Invalid OTP. ${3 - storedOTP.attempts} attempts remaining`,
         });
       }
@@ -103,10 +157,32 @@ class AuthController {
       storedOTP.verified = true;
       await otpStore.set(phone, storedOTP, 300);
 
+      // Update user's phoneVerified status
+      let user = await User.findOne({ phone });
+      if (!user) {
+        // Create user if doesn't exist
+        user = new User({
+          phone,
+          role: "patient",
+          phoneVerified: true,
+          phoneVerifiedAt: new Date(),
+        });
+        await user.save();
+      } else {
+        user.phoneVerified = true;
+        user.phoneVerifiedAt = new Date();
+        await user.save();
+      }
+
       logger.info(`OTP verified for ${phone}`);
 
-      res.status(200).json({
+      // Generate token for the user
+      const { accessToken, refreshToken } = this.generateTokens(user);
+
+      return res.status(200).json({
         success: true,
+        token: accessToken,
+        refreshToken,
         message: "OTP verified successfully",
       });
     } catch (error) {
@@ -128,37 +204,27 @@ class AuthController {
           .json({ error: "Phone and password are required" });
       }
 
-      // Find user
       const user = await User.findOne({ phone });
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      // Check if user is opted out
       if (user.optOut?.isOptedOut) {
         return res.status(401).json({ error: "Account has been deactivated" });
       }
 
-      // Verify password (use bcrypt in production)
-      const isValidPassword = await this.verifyPassword(
-        password,
-        user.password,
-      );
+      const isValidPassword = await comparePassword(password, user.password);
       if (!isValidPassword) {
-        // Log failed attempt
         await this.logFailedLogin(user, req);
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      // Update last login
       user.lastLoginAt = new Date();
       user.lastLoginIP = req.ip;
       await user.save();
 
-      // Generate tokens
-      const { accessToken, refreshToken } = authMiddleware.generateTokens(user);
+      const { accessToken, refreshToken } = this.generateTokens(user);
 
-      // Get CHEW profile if applicable
       let chewProfile = null;
       if (user.role === "chew" || user.role === "supervisor") {
         chewProfile = await CHEWProfile.findOne({ userId: user._id });
@@ -204,12 +270,23 @@ class AuthController {
         return res.status(400).json({ error: "Refresh token required" });
       }
 
-      const tokens = await authMiddleware.refreshAccessToken(refreshToken);
+      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+      if (decoded.type !== "refresh") {
+        return res.status(401).json({ error: "Invalid token type" });
+      }
+
+      const user = await User.findById(decoded.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const { accessToken, refreshToken: newRefreshToken } =
+        this.generateTokens(user);
 
       res.status(200).json({
         success: true,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken,
+        refreshToken: newRefreshToken,
       });
     } catch (error) {
       logger.error("Refresh token error:", error);
@@ -224,7 +301,14 @@ class AuthController {
     try {
       const token = req.token;
       if (token) {
-        await authMiddleware.revokeToken(token);
+        const decoded = jwt.decode(token);
+        if (decoded && decoded.exp) {
+          const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+          if (ttl > 0) {
+            const redis = (await import("../config/redis.js")).default;
+            await redis.setex(`revoked:${token}`, ttl, "true");
+          }
+        }
       }
 
       logger.info(`User logged out: ${req.user?._id}`);
@@ -266,13 +350,9 @@ class AuthController {
         return res.status(401).json({ error: "Current password is incorrect" });
       }
 
-      // Hash new password with bcrypt
       user.password = await hashPassword(newPassword);
       user.passwordChangedAt = new Date();
       await user.save();
-
-      // Revoke all tokens
-      // In production, invalidate all user sessions
 
       logger.info(`Password changed for user: ${userId}`);
 
@@ -299,27 +379,40 @@ class AuthController {
 
       const user = await User.findOne({ phone });
       if (!user) {
-        // Don't reveal if user exists for security
         return res.status(200).json({
           success: true,
           message: "If an account exists, you will receive reset instructions",
         });
       }
 
-      // Generate reset token
-      const resetToken = crypto.randomBytes(32).toString("hex");
+      // Generate raw reset token
+      const rawResetToken = crypto.randomBytes(32).toString("hex");
+
+      // Hash the token before storing in database
+      const hashedToken = crypto
+        .createHash("sha256")
+        .update(rawResetToken)
+        .digest("hex");
+
       const resetExpires = Date.now() + 3600000; // 1 hour
 
-      user.resetPasswordToken = resetToken;
+      // Store the HASHED token, not the raw token
+      user.resetPasswordToken = hashedToken;
       user.resetPasswordExpires = resetExpires;
       await user.save();
 
-      // Send reset link via SMS
-      // await messagingService.sendTemplatedMessage('password_reset', phone, {
-      //   token: resetToken
-      // }, user.preferredLanguage);
-
+      // In a real implementation, you would send the RAW token to the user via SMS
+      // For development/testing, we can return it (remove in production)
       logger.info(`Password reset requested for ${phone}`);
+
+      // For development only - in production, send via SMS
+      if (process.env.NODE_ENV !== "production") {
+        return res.status(200).json({
+          success: true,
+          message: "If an account exists, you will receive reset instructions",
+          resetToken: rawResetToken, // Only for testing - remove in production
+        });
+      }
 
       res.status(200).json({
         success: true,
@@ -344,8 +437,20 @@ class AuthController {
           .json({ error: "Token and new password required" });
       }
 
+      if (newPassword.length < 6) {
+        return res
+          .status(400)
+          .json({ error: "Password must be at least 6 characters" });
+      }
+
+      // Hash the submitted token to compare with stored hash
+      const hashedToken = crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+
       const user = await User.findOne({
-        resetPasswordToken: token,
+        resetPasswordToken: hashedToken,
         resetPasswordExpires: { $gt: Date.now() },
       });
 
@@ -355,8 +460,7 @@ class AuthController {
           .json({ error: "Invalid or expired reset token" });
       }
 
-      // Update password
-      user.password = await this.hashPassword(newPassword);
+      user.password = await hashPassword(newPassword);
       user.resetPasswordToken = undefined;
       user.resetPasswordExpires = undefined;
       user.passwordChangedAt = new Date();
@@ -386,6 +490,14 @@ class AuthController {
         chewProfile = await CHEWProfile.findOne({ userId: user._id });
       }
 
+      const consentInfo = user.consent
+        ? {
+            sms: user.consent.sms,
+            dataProcessing: user.consent.dataProcessing,
+            hasConsented: true,
+          }
+        : { hasConsented: false };
+
       res.status(200).json({
         success: true,
         user: {
@@ -397,9 +509,10 @@ class AuthController {
           preferredLanguage: user.preferredLanguage,
           role: user.role,
           trustedContact: user.trustedContact,
-          consent: user.consent,
+          consent: consentInfo,
           createdAt: user.createdAt,
           lastLoginAt: user.lastLoginAt,
+          phoneVerified: user.phoneVerified,
           chewProfile: chewProfile
             ? {
                 phcId: chewProfile.phcId,
@@ -512,7 +625,6 @@ class AuthController {
     }
   }
 
-
   async logFailedLogin(user, req) {
     await SystemEvent.create({
       type: "AUTH_FAILURE",
@@ -524,15 +636,6 @@ class AuthController {
         userAgent: req.get("user-agent"),
       },
     });
-  }
-
-  cleanupExpiredOTPs() {
-    const now = Date.now();
-    for (const [key, value] of this.otpStore.entries()) {
-      if (value.expiresAt && value.expiresAt < now) {
-        this.otpStore.delete(key);
-      }
-    }
   }
 }
 

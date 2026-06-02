@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import mongoose from "mongoose";
+import ancRoutes from "./routes/anc.js";
 import morgan from "morgan";
 import swaggerUi from "swagger-ui-express";
 import routes from "./routes/index.js";
@@ -48,11 +50,8 @@ app.use(requestIdMiddleware);
 app.use(requestLoggingMiddleware);
 
 // Body parsing
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Rate limiting for API routes
-app.use("/api", generalLimiter);
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // Swagger UI endpoint (no rate limit)
 app.use(
@@ -70,7 +69,7 @@ logger.info("Swagger UI available at /docs");
 
 /**
  * @swagger
- * /api/v1/health:
+ * /health:
  *   get:
  *     tags:
  *       - Health
@@ -108,21 +107,59 @@ logger.info("Swagger UI available at /docs");
  *         description: API is degraded or unavailable
  */
 // Health check endpoint (no rate limit)
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
+  let redisStatus = "unknown";
+  let redisConnected = false;
+
+  try {
+    // Dynamically import to avoid issues if not available
+    const redisModule = await import("./config/redis.js");
+    const redisClient = redisModule.default;
+
+    if (redisClient && typeof redisClient.ping === "function") {
+      await redisClient.ping();
+      redisStatus = "connected";
+      redisConnected = true;
+    } else {
+      redisStatus = "not_configured";
+      redisConnected = true; // Consider it OK if Redis is optional
+    }
+  } catch (error) {
+    // Log the error instead of empty catch
+    logger.warn(`Redis health check failed: ${error.message}`);
+    redisStatus = "disconnected";
+    redisConnected = process.env.REDIS_REQUIRED !== "true";
+  }
+
+  const dbConnected = mongoose.connection.readyState === 1;
+  const isHealthy = dbConnected && redisConnected;
+
   const health = {
-    status: "healthy",
+    status: isHealthy ? "healthy" : "degraded",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || "development",
+    // Backward compatible: include database at root level for tests
     database: {
-      connected: true,
-      status: "connected",
+      connected: dbConnected,
+      status: dbConnected ? "connected" : "disconnected",
+    },
+    // Also include the detailed services structure
+    services: {
+      database: {
+        connected: dbConnected,
+        status: dbConnected ? "connected" : "disconnected",
+      },
+      redis: {
+        connected: redisStatus === "connected",
+        status: redisStatus,
+      },
     },
   };
 
-  res.status(200).json(health);
+  const statusCode = health.status === "healthy" ? 200 : 503;
+  res.status(statusCode).json(health);
 });
-
 // API info endpoint
 app.get("/api", (req, res) => {
   res.status(200).json({
@@ -140,8 +177,13 @@ app.get("/api", (req, res) => {
 });
 
 // API routes
-app.use("/api/v1", routes);
 app.use("/api/v1/webhook", webhookRoutes);
+
+// Rate limiting for API routes
+app.use("/api", generalLimiter);
+
+app.use("/api/v1", routes);
+app.use("/api/v1/anc", ancRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -150,5 +192,22 @@ app.use((req, res) => {
 
 // Global error handler
 app.use(errorHandler);
+
+let server = null;
+
+export const startServer = (port) => {
+  server = app.listen(port, () => {
+    logger.info(`Server running on port ${port}`);
+  });
+  return server;
+};
+
+export const closeServer = async () => {
+  if (server) {
+    await new Promise((resolve) => {
+      server.close(resolve);
+    });
+  }
+};
 
 export default app;

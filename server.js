@@ -9,7 +9,7 @@ import {
 } from "./src/utils/envValidator.js";
 
 const PORT = process.env.PORT || 3000;
-let server; // Declare at module scope for graceful shutdown
+let server;
 
 // Graceful shutdown function
 const gracefulShutdown = async () => {
@@ -39,7 +39,7 @@ const gracefulShutdown = async () => {
 const startServer = async () => {
   try {
     console.log("🔧 Starting MamaCheck backend...");
-    
+
     // Validate environment variables first
     validateEnvironment();
     logger.info("Configuration:", getEnvironmentSummary());

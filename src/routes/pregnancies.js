@@ -1,11 +1,10 @@
 import express from "express";
 import pregnancyController from "../controllers/pregnancyController.js";
 import { authMiddleware, requireCHEW } from "../middleware/auth.js";
-import {
-  validateRegistration,
-  validateVisitAttendance,
-} from "../middleware/validation.js";
+import { validateRegistration } from "../middleware/validation.js";
 import { registrationLimiter } from "../middleware/rateLimiter.js";
+import ANCVisitLog from "../models/ANCVisitLog.js";
+import Pregnancy from "../models/Pregnancy.js";
 
 const router = express.Router();
 
@@ -15,8 +14,8 @@ const router = express.Router();
  *   post:
  *     tags:
  *       - Pregnancies
- *     summary: Register new pregnancy
- *     description: Register a new pregnant woman (CHEW only). Initializes ANC tracking and sends confirmation SMS.
+ *     summary: Register a new pregnancy
+ *     description: CHEW registers a new pregnant woman into the system
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -26,40 +25,43 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
+ *               - name
  *               - phone
- *               - firstName
- *               - lastName
- *               - lga
- *               - lmp_date
+ *               - lmp
  *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "Jane Doe"
  *               phone:
  *                 type: string
- *                 example: "+2348012345678"
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               lga:
- *                 type: string
- *               lmp_date:
+ *                 example: "08012345678"
+ *               lmp:
  *                 type: string
  *                 format: date
- *                 description: Last Menstrual Period date
+ *                 example: "2025-09-18"
+ *               preferredLanguage:
+ *                 type: string
+ *                 enum: [en, ha, yo, ig]
+ *                 default: en
+ *               clinicName:
+ *                 type: string
+ *               address:
+ *                 type: object
+ *                 properties:
+ *                   lga:
+ *                     type: string
+ *                   state:
+ *                     type: string
  *     responses:
  *       201:
  *         description: Pregnancy registered successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Pregnancy'
  *       400:
  *         description: Validation error
  *       401:
  *         description: Unauthorized
- *       429:
- *         description: Rate limit exceeded
+ *       403:
+ *         description: Forbidden - CHEW role required
  */
-// Register new pregnancy (CHEW only)
 router.post(
   "/register",
   authMiddleware,
@@ -76,7 +78,7 @@ router.post(
  *     tags:
  *       - Pregnancies
  *     summary: Get all pregnancies for a CHEW
- *     description: Retrieve all pregnancies managed by a specific Community Health Extension Worker
+ *     description: Returns all pregnancies assigned to a specific CHEW
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -85,7 +87,7 @@ router.post(
  *         required: true
  *         schema:
  *           type: string
- *         description: CHEW ID
+ *         description: CHEW user ID
  *     responses:
  *       200:
  *         description: List of pregnancies
@@ -97,10 +99,7 @@ router.post(
  *                 $ref: '#/components/schemas/Pregnancy'
  *       401:
  *         description: Unauthorized
- *       403:
- *         description: Forbidden - only CHEW role can access
  */
-// Get all pregnancies for CHEW
 router.get("/chew/:chewId", authMiddleware, requireCHEW, (req, res) =>
   pregnancyController.getCHEWPregnancies(req, res),
 );
@@ -111,8 +110,8 @@ router.get("/chew/:chewId", authMiddleware, requireCHEW, (req, res) =>
  *   get:
  *     tags:
  *       - Pregnancies
- *     summary: Get pregnancy details
- *     description: Retrieve detailed information for a specific pregnancy
+ *     summary: Get pregnancy by ID
+ *     description: Returns detailed information about a specific pregnancy
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -129,14 +128,102 @@ router.get("/chew/:chewId", authMiddleware, requireCHEW, (req, res) =>
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Pregnancy'
- *       401:
- *         description: Unauthorized
  *       404:
  *         description: Pregnancy not found
  */
-// Get single pregnancy details
 router.get("/:pregnancyId", authMiddleware, (req, res) =>
   pregnancyController.getPregnancyById(req, res),
+);
+
+/**
+ * @swagger
+ * /api/v1/pregnancies/{pregnancyId}/attended/undo:
+ *   post:
+ *     tags:
+ *       - Pregnancies
+ *     summary: Undo visit attendance
+ *     description: Undo a previously marked ANC visit attendance (within 10 minutes)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pregnancyId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Pregnancy ID
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 example: "Marked by mistake"
+ *     responses:
+ *       200:
+ *         description: Visit attendance undone successfully
+ *       400:
+ *         description: Undo window expired (after 10 minutes)
+ *       404:
+ *         description: No attendance record found
+ *       401:
+ *         description: Unauthorized
+ */
+router.post(
+  "/:pregnancyId/attended/undo",
+  authMiddleware,
+  requireCHEW,
+  async (req, res) => {
+    try {
+      const { pregnancyId } = req.params;
+
+      const pregnancy = await Pregnancy.findById(pregnancyId).lean();
+      if (!pregnancy) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Pregnancy not found" });
+      }
+
+      // Find the most recent marked_attended log for this pregnancy
+      const lastLog = await ANCVisitLog.findOne({
+        pregnancyId,
+        action: "marked_attended",
+      }).sort({ markedAtTime: -1 });
+
+      if (!lastLog) {
+        return res
+          .status(404)
+          .json({ success: false, error: "No attendance record found" });
+      }
+
+      const timeSince = Date.now() - new Date(lastLog.markedAtTime).getTime();
+      if (timeSince > 10 * 60 * 1000) {
+        return res.status(400).json({
+          success: false,
+          error: "Undo window expired. Cannot undo attendance after 10 minutes",
+        });
+      }
+
+      const undoLog = await ANCVisitLog.create({
+        pregnancyId,
+        womanId: lastLog.womanId,
+        chewId: req.user._id,
+        visitWeek: lastLog.visitWeek,
+        action: "undone",
+        attendedDate: lastLog.attendedDate || new Date(),
+        markedAtTime: new Date(),
+        notes: req.body.reason || "Undone by CHEW",
+      });
+
+      res.status(200).json({ success: true, data: undoLog });
+    } catch (error) {
+      console.error("Error undoing visit:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
 );
 
 /**
@@ -146,7 +233,7 @@ router.get("/:pregnancyId", authMiddleware, (req, res) =>
  *     tags:
  *       - Pregnancies
  *     summary: Mark ANC visit as attended
- *     description: Record that a scheduled ANC visit was attended. Triggers triage workflow.
+ *     description: Mark a specific ANC milestone visit as attended by the pregnant woman
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -155,43 +242,66 @@ router.get("/:pregnancyId", authMiddleware, (req, res) =>
  *         required: true
  *         schema:
  *           type: string
+ *         description: Pregnancy ID
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - vitals
  *             properties:
- *               vitals:
- *                 type: object
- *                 properties:
- *                   bloodPressure:
- *                     type: string
- *                   weight:
- *                     type: number
- *                   temperature:
- *                     type: number
+ *               milestoneNumber:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 8
+ *                 example: 4
+ *               visitWeek:
+ *                 type: integer
+ *                 example: 4
  *     responses:
  *       200:
- *         description: Visit marked as attended
- *       400:
- *         description: Validation error
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden - only CHEW can mark attendance
+ *         description: Visit marked as attended successfully
  *       404:
  *         description: Pregnancy not found
+ *       401:
+ *         description: Unauthorized
  */
-// Mark ANC visit as attended
 router.post(
   "/:pregnancyId/attended",
   authMiddleware,
   requireCHEW,
-  validateVisitAttendance,
-  (req, res) => pregnancyController.markVisitAttended(req, res),
+  async (req, res) => {
+    try {
+      const { pregnancyId } = req.params;
+      const { milestoneNumber, visitWeek } = req.body;
+      const week = visitWeek || milestoneNumber || 1;
+
+      const pregnancy = await Pregnancy.findById(pregnancyId).lean();
+      if (!pregnancy) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Pregnancy not found" });
+      }
+
+      // womanId is stored directly on the Pregnancy model
+      const womanId = pregnancy.womanId;
+
+      const log = await ANCVisitLog.create({
+        pregnancyId,
+        womanId,
+        chewId: req.user._id,
+        visitWeek: week,
+        action: "marked_attended",
+        attendedDate: new Date(),
+        markedAtTime: new Date(),
+      });
+
+      res.status(200).json({ success: true, data: log });
+    } catch (error) {
+      console.error("Error marking visit:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
 );
 
 /**
@@ -201,7 +311,6 @@ router.post(
  *     tags:
  *       - Pregnancies
  *     summary: Update pregnancy information
- *     description: Update pregnancy details and tracking information
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -217,26 +326,19 @@ router.post(
  *           schema:
  *             type: object
  *             properties:
- *               gestationalAge:
- *                 type: number
- *               riskLevel:
+ *               clinicName:
  *                 type: string
- *                 enum: [low, medium, high]
- *               notes:
+ *               address:
+ *                 type: object
+ *               status:
  *                 type: string
+ *                 enum: [active, completed, referred, archived]
  *     responses:
  *       200:
  *         description: Pregnancy updated successfully
- *       400:
- *         description: Validation error
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden - only CHEW can update
  *       404:
  *         description: Pregnancy not found
  */
-// Update pregnancy information
 router.put("/:pregnancyId", authMiddleware, requireCHEW, (req, res) =>
   pregnancyController.updatePregnancy(req, res),
 );
@@ -247,8 +349,8 @@ router.put("/:pregnancyId", authMiddleware, requireCHEW, (req, res) =>
  *   get:
  *     tags:
  *       - Pregnancies
- *     summary: Get danger reports for pregnancy
- *     description: Retrieve red flag danger reports detected for this pregnancy
+ *     summary: Get danger reports for a pregnancy
+ *     description: Returns all danger reports/symptoms reported during this pregnancy
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -266,60 +368,17 @@ router.put("/:pregnancyId", authMiddleware, requireCHEW, (req, res) =>
  *               type: array
  *               items:
  *                 type: object
- *       401:
- *         description: Unauthorized
- *       404:
- *         description: Pregnancy not found
+ *                 properties:
+ *                   symptoms:
+ *                     type: array
+ *                   triageOutcome:
+ *                     type: string
+ *                   reportedAt:
+ *                     type: string
+ *                     format: date-time
  */
-// Get danger reports for pregnancy
 router.get("/:pregnancyId/danger-reports", authMiddleware, (req, res) =>
   pregnancyController.getDangerReports(req, res),
-);
-
-/**
- * @swagger
- * /api/v1/pregnancies/{pregnancyId}/attended/undo:
- *   post:
- *     tags:
- *       - Pregnancies
- *     summary: Undo visit attendance
- *     description: Undo a visit attendance mark (only within 10 minutes of marking)
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: pregnancyId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               reason:
- *                 type: string
- *                 description: Reason for undoing attendance
- *     responses:
- *       200:
- *         description: Attendance undone successfully
- *       400:
- *         description: Cannot undo - 10 minute window expired
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden - only CHEW can undo
- *       404:
- *         description: Pregnancy not found
- */
-// Undo visit attendance (within 10 minutes)
-router.post(
-  "/:pregnancyId/attended/undo",
-  authMiddleware,
-  requireCHEW,
-  (req, res) => pregnancyController.undoVisitAttended(req, res),
 );
 
 /**
@@ -328,8 +387,8 @@ router.post(
  *   get:
  *     tags:
  *       - Pregnancies
- *     summary: Get attendance history
- *     description: Retrieve visit attendance history with undo availability status for recent entries
+ *     summary: Get ANC visit attendance history
+ *     description: Returns the complete attendance history for this pregnancy
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -340,7 +399,7 @@ router.post(
  *           type: string
  *     responses:
  *       200:
- *         description: Attendance history
+ *         description: Attendance history array
  *         content:
  *           application/json:
  *             schema:
@@ -348,21 +407,45 @@ router.post(
  *               items:
  *                 type: object
  *                 properties:
- *                   date:
+ *                   visitWeek:
+ *                     type: integer
+ *                   action:
+ *                     type: string
+ *                   attendedDate:
  *                     type: string
  *                     format: date-time
- *                   status:
+ *                   markedAtTime:
  *                     type: string
+ *                     format: date-time
  *                   canUndo:
  *                     type: boolean
- *       401:
- *         description: Unauthorized
  *       404:
  *         description: Pregnancy not found
  */
-// Get attendance history with undo availability
-router.get("/:pregnancyId/attendance-history", authMiddleware, (req, res) =>
-  pregnancyController.getAttendanceHistory(req, res),
+router.get(
+  "/:pregnancyId/attendance-history",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const { pregnancyId } = req.params;
+
+      const pregnancy = await Pregnancy.findById(pregnancyId).lean();
+      if (!pregnancy) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Pregnancy not found" });
+      }
+
+      const logs = await ANCVisitLog.find({ pregnancyId })
+        .sort({ markedAtTime: -1 })
+        .lean({ virtuals: true });
+
+      res.status(200).json(logs);
+    } catch (error) {
+      console.error("Error getting attendance history:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
 );
 
 export default router;

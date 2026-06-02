@@ -35,8 +35,12 @@ const errorHandler = (err, req, res, _next) => {
   const response = {
     error: err.message || "Internal server error",
     status: statusCode,
-    requestId: req.id, // Include for debugging
   };
+
+  // Include requestId for non-500 errors or in development
+  if (statusCode < 500 || process.env.NODE_ENV === "development") {
+    response.requestId = req.id;
+  }
 
   // Only include stack trace in development
   if (process.env.NODE_ENV === "development") {

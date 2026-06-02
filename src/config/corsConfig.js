@@ -2,17 +2,14 @@
  * CORS Configuration for production security
  * Validates and enforces strict origin policies
  */
-
 export const getCorsOptions = () => {
   const nodeEnv = process.env.NODE_ENV || "development";
   const frontendUrl = process.env.FRONTEND_URL;
   const corsOrigin = process.env.CORS_ORIGIN;
 
-  // Allowed origins
   const allowedOrigins = [];
 
   if (nodeEnv === "development") {
-    // Development: allow localhost
     allowedOrigins.push(
       "http://localhost:3000",
       "http://localhost:3001",
@@ -23,7 +20,6 @@ export const getCorsOptions = () => {
     );
   }
 
-  // Always add environment-configured origins
   if (frontendUrl) {
     allowedOrigins.push(frontendUrl);
   }
@@ -31,15 +27,20 @@ export const getCorsOptions = () => {
     allowedOrigins.push(corsOrigin);
   }
 
-  // Remove duplicates
-  const uniqueOrigins = new Set(new Set(allowedOrigins));
+  // FIXED: Remove redundant double Set
+  const uniqueOrigins = [...new Set(allowedOrigins)];
+
+  // ADDED: Startup validation for production
+  if (nodeEnv === "production" && uniqueOrigins.length === 0) {
+    throw new Error(
+      "FATAL: No CORS origins configured for production. Set FRONTEND_URL or CORS_ORIGIN.",
+    );
+  }
 
   return {
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl requests)
       if (!origin) return callback(null, true);
-
-      if (uniqueOrigins.has(origin)) {
+      if (uniqueOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
@@ -48,7 +49,7 @@ export const getCorsOptions = () => {
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
-    maxAge: 86400, // 24 hours
-    optionsSuccessStatus: 200,
+    maxAge: 86400,
+    optionsSuccessStatus: 204,
   };
 };

@@ -15,7 +15,7 @@ const ancVisitLogSchema = new mongoose.Schema(
     womanId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
     },
     chewId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -25,35 +25,72 @@ const ancVisitLogSchema = new mongoose.Schema(
     visitWeek: {
       type: Number,
       required: true,
+      min: 1,
+      max: 8,
     },
     action: {
       type: String,
       enum: ["marked_attended", "undone", "unmarked"],
       required: true,
     },
-    markedAtDate: {
-      type: Date, // The actual date the woman attended (or claimed to have attended)
+    attendedDate: {
+      type: Date,
+      description:
+        "The actual date the woman attended (or claimed to have attended)",
+    },
+    markedAtTime: {
+      type: Date,
+      default: Date.now,
       required: true,
     },
-    markedAtTime: Date, // When the CHEW marked it in the system
-    notes: String,
-    undoReason: String,
-    undoTime: Date, // When it was undone
-    canUndo: {
-      type: Boolean,
-      default: function () {
-        if (this.action !== "marked_attended") return false;
-        // Can undo if marked less than 10 minutes ago
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-        return this.markedAtTime > tenMinutesAgo;
-      },
+    notes: {
+      type: String,
+      maxlength: 500,
+    },
+    undoReason: {
+      type: String,
+      maxlength: 500,
+    },
+    undoTime: {
+      type: Date,
     },
   },
   { timestamps: true },
 );
 
+// Auto-populate attendedDate for marked_attended records if not provided
+ancVisitLogSchema.pre("save", function (next) {
+  if (this.action === "marked_attended" && !this.attendedDate) {
+    this.attendedDate = this.markedAtTime || new Date();
+  }
+  next();
+});
+
+// Virtual field for canUndo - calculated at query time
+ancVisitLogSchema.virtual("canUndo").get(function () {
+  if (this.action !== "marked_attended") return false;
+  if (!this.markedAtTime) return false;
+
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  return this.markedAtTime > tenMinutesAgo;
+});
+
+// Virtual field for undo window expiration
+ancVisitLogSchema.virtual("undoWindowExpires").get(function () {
+  if (this.action !== "marked_attended") return null;
+  if (!this.markedAtTime) return null;
+
+  return new Date(this.markedAtTime.getTime() + 10 * 60 * 1000);
+});
+
+// Ensure virtuals are included in JSON output
+ancVisitLogSchema.set("toJSON", { virtuals: true });
+ancVisitLogSchema.set("toObject", { virtuals: true });
+
+// Indexes for performance
 ancVisitLogSchema.index({ pregnancyId: 1, visitWeek: 1 });
-ancVisitLogSchema.index({ markedAtTime: 1 }); // For undo window queries
-ancVisitLogSchema.index({ action: 1 });
+ancVisitLogSchema.index({ markedAtTime: -1 }); // For undo window queries
+ancVisitLogSchema.index({ action: 1, markedAtTime: -1 });
+ancVisitLogSchema.index({ pregnancyId: 1, markedAtTime: -1 });
 
 export default mongoose.model("ANCVisitLog", ancVisitLogSchema);
