@@ -47,21 +47,39 @@ jobs:
           cat > .env.test << EOF
           NODE_ENV=test
           MONGODB_URI=mongodb://localhost:27017/mamacheck-test
-          JWT_SECRET=test-secret-key-for-github-actions
-          TERMII_API_KEY=test-key
+          JWT_SECRET=test-secret-key-for-github-actions-32-chars-minimum
           GROQ_API_KEY=test-key
+          # Twilio mock values for CI (no real credentials needed)
+          TWILIO_ACCOUNT_SID=ACmock_test_account_sid_12345
+          TWILIO_AUTH_TOKEN=mock_test_auth_token_for_github_actions
+          TWILIO_PHONE_NUMBER=+1234567890
+          # Frontend and webhook URLs for CI
+          FRONTEND_URL=http://localhost:3000
+          WEBHOOK_BASE_URL=http://localhost:3000/api/webhooks
+          REDIS_URL=redis://localhost:6379
+          BYPASS_OTP_FOR_TESTING=true
+          LOG_LEVEL=debug
+          OTP_EXPIRY_MINUTES=5
           EOF
+          echo "Test environment file created"
 
       - name: Lint
         run: npm run lint --if-present
 
       - name: Run tests with coverage
         env:
-          MONGODB_URI: mongodb://localhost:27017/mamacheck-test
           NODE_ENV: test
-          JWT_SECRET: test-secret-key-for-github-actions
-          TERMII_API_KEY: test-key
+          MONGODB_URI: mongodb://localhost:27017/mamacheck-test
+          JWT_SECRET: test-secret-key-for-github-actions-32-chars-minimum
           GROQ_API_KEY: test-key
+          TWILIO_ACCOUNT_SID: ACmock_test_account_sid_12345
+          TWILIO_AUTH_TOKEN: mock_test_auth_token_for_github_actions
+          TWILIO_PHONE_NUMBER: +1234567890
+          FRONTEND_URL: http://localhost:3000
+          WEBHOOK_BASE_URL: http://localhost:3000/api/webhooks
+          REDIS_URL: redis://localhost:6379
+          BYPASS_OTP_FOR_TESTING: true
+          LOG_LEVEL: debug
         run: npm test -- --coverage --watchAll=false --testTimeout=20000
 
       - name: Verify test coverage thresholds
