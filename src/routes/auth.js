@@ -173,13 +173,19 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-    // Store OTP in Redis via otpStore for rate-limiting and dedup.
-    await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
-
-    // Also persist otp + otpExpiry onto the User document so that
-    // verify-otp (which reads user.otp / user.otpExpiry from MongoDB)
-    // can validate the code. Without this write the two paths never connect.
+    // Write otp + otpExpiry to MongoDB FIRST. This is the source of truth
+    // that verify-otp reads from. Must succeed before anything else.
     await User.findOneAndUpdate({ phone }, { otp, otpExpiry });
+
+    // Best-effort write to Redis for rate-limiting / dedup.
+    // Wrapped in its own try/catch so a Redis outage (ECONNREFUSED,
+    // no production Redis, CI without a service container) does not
+    // prevent the OTP from being issued and verified via MongoDB.
+    try {
+      await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
+    } catch (_redisErr) {
+      // Redis unavailable - OTP still works via MongoDB path above.
+    }
 
     // Integrate with MessagingService to send OTP
     const result = await messagingService.sendSMS({
