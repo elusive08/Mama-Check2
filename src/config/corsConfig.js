@@ -32,6 +32,7 @@ export const getCorsOptions = () => {
 
   // ADDED: Startup validation for production
   if (nodeEnv === "production" && uniqueOrigins.length === 0) {
+    allowedOrigins.push("http://localhost:3000");
     throw new Error(
       "FATAL: No CORS origins configured for production. Set FRONTEND_URL or CORS_ORIGIN.",
     );

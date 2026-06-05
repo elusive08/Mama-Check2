@@ -53,19 +53,21 @@ app.use(requestLoggingMiddleware);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// Swagger UI endpoint (no rate limit)
-app.use(
-  "/docs",
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec, {
-    swaggerOptions: {
-      persistAuthorization: true,
-      displayOperationId: false,
-    },
-    customCss: `.topbar { display: none }`,
-  }),
-);
-logger.info("Swagger UI available at /docs");
+// Swagger UI — development only
+if (process.env.NODE_ENV !== "production") {
+  app.use(
+    "/docs",
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        displayOperationId: false,
+      },
+      customCss: `.topbar { display: none }`,
+    }),
+  );
+  logger.info("Swagger UI available at /docs");
+}
 
 /**
  * @swagger

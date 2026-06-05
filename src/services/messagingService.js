@@ -152,6 +152,8 @@ class MessagingService {
       return {
         success: false,
         error: error.message,
+        code: error.code, // Twilio error code e.g. 21608 = unverified number
+        moreInfo: error.moreInfo, // Twilio docs URL for this error
       };
     }
   }

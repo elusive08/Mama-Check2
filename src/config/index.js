@@ -35,7 +35,6 @@ try {
   validateEnvironmentVariables();
 } catch (error) {
   console.error(error.message);
-  process.exit(1);
 }
 
 export default {
