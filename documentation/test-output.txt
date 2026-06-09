@@ -1,0 +1,386 @@
+
+> mamacheck-backend@1.0.0 test
+> node --experimental-vm-modules node_modules/jest/bin/jest.js
+
+(node:4093) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4094) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS tests/unit/api.test.js (39.147 s)
+PASS tests/unit/middleware.test.js (11.811 s)
+PASS tests/unit/envValidator.test.js (10.951 s)
+FAIL tests/integration/sms-workflow.integration.test.js (69.865 s)
+  ● SMS Workflow Integration Tests › 1. Pregnancy Registration with OTP › should request OTP for phone number
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 1. Pregnancy Registration with OTP › should verify OTP and return token
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 1. Pregnancy Registration with OTP › should reject invalid OTP
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 1. Pregnancy Registration with OTP › should register pregnancy with CHEW
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 2. STOP Keyword SMS Opt-Out › should handle STOP keyword in SMS
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 2. STOP Keyword SMS Opt-Out › should update user opt-out status
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 2. STOP Keyword SMS Opt-Out › should accept UNSUBSCRIBE keyword
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 3. Danger Sign Triage Workflow › should process GREEN (no symptoms) response
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 3. Danger Sign Triage Workflow › should process YELLOW (warning) symptoms
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 3. Danger Sign Triage Workflow › should process RED (critical) symptoms
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 3. Danger Sign Triage Workflow › should apply highest-severity rule for multiple symptoms
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 3. Danger Sign Triage Workflow › should create danger report for RED symptoms
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 4. Visit Attendance & Undo Feature › should mark visit as attended
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 4. Visit Attendance & Undo Feature › should undo visit attendance within 10 minutes
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 4. Visit Attendance & Undo Feature › should reject undo after 10 minutes
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 4. Visit Attendance & Undo Feature › should get attendance history
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 5. Reference Data Endpoints › should get all LGAs
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 5. Reference Data Endpoints › should get all states
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 5. Reference Data Endpoints › should get LGAs by state
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 5. Reference Data Endpoints › should get PHCs by LGA
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 5. Reference Data Endpoints › should find nearest PHC by coordinates
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 6. Security & Validation › should require authentication for protected endpoints
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 6. Security & Validation › should enforce CHEW role for registration
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+  ● SMS Workflow Integration Tests › 6. Security & Validation › should validate phone number format
+
+    Database connection not ready after 30000ms
+
+      23 |     await new Promise((resolve) => setTimeout(resolve, 500));
+      24 |   }
+    > 25 |   throw new Error(
+         |         ^
+      26 |     "Database connection not ready after " + maxWaitTime + "ms"
+      27 |   );
+      28 | };
+
+      at waitForDatabaseConnection (tests/integration/sms-workflow.integration.test.js:25:9)
+      at Object.<anonymous> (tests/integration/sms-workflow.integration.test.js:41:5)
+
+PASS tests/unit/utils.test.js (9.026 s)
+PASS tests/unit/controllers.test.js (5.738 s)
+PASS tests/unit/gestationalAge.test.js (7.506 s)
+PASS tests/integration/auth.integration.test.js (8.394 s)
+PASS tests/unit/triageService.test.js (8.809 s)
+PASS tests/unit/services.test.js (9.631 s)
+PASS tests/unit/models.test.js (11.227 s)
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+
+Test Suites: 1 failed, 10 passed, 11 total
+Tests:       24 failed, 159 passed, 183 total
+Snapshots:   0 total
+Time:        102.671 s, estimated 306 s
+Ran all test suites.

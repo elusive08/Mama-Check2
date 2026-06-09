@@ -1,0 +1,198 @@
+
+> mamacheck-backend@1.0.0 test
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --watchAll=false --verbose
+
+[31merror[39m: Missing required environment variables: MONGODB_URI {"timestamp":"2026-05-19 10:12:08"}
+[32minfo[39m: Environment validation passed {"timestamp":"2026-05-19 10:12:08"}
+[32minfo[39m: Swagger UI available at /docs {"timestamp":"2026-05-19 10:12:25"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection failed, retrying in 50ms... {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection failed, retrying in 100ms... {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection failed, retrying in 150ms... {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:26"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection failed, retrying in 200ms... {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:26"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection failed, retrying in 250ms... {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection failed, retrying in 300ms... {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection failed, retrying in 350ms... {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:27"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection failed, retrying in 400ms... {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:27"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:28"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:28"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:28"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis connection failed, retrying in 450ms... {"timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:28"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:28"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:28"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis connection failed, retrying in 500ms... {"timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:28"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:29"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:29"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:29"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis connection failed, retrying in 550ms... {"timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:29"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:29"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:29"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis connection failed, retrying in 600ms... {"timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:29"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:30"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:30"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:30"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:30"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:30"}
+[33mwarn[39m: Redis connection failed, retrying in 650ms... {"timestamp":"2026-05-19 10:12:30"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:30"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:31"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:31"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:31"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis connection failed, retrying in 700ms... {"timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:31"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:31"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:31"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis connection failed, retrying in 750ms... {"timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:31"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:32"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:32"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:32"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:32"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:32"}
+[33mwarn[39m: Redis connection failed, retrying in 800ms... {"timestamp":"2026-05-19 10:12:32"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:32"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:33"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:33"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:33"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis connection failed, retrying in 850ms... {"timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection failed, retrying in 900ms... {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:35"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:35"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:35"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:35"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:35"}
+[33mwarn[39m: Redis connection failed, retrying in 950ms... {"timestamp":"2026-05-19 10:12:35"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:35"}
+[32minfo[39m: Swagger UI available at /docs {"timestamp":"2026-05-19 10:12:35"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:36"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:36 +0000] "GET /health HTTP/1.1" 200 102 "-" "-" {"timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:36"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:36"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:36"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:36"}
+[33mwarn[39m: Redis connection failed, retrying in 1000ms... {"timestamp":"2026-05-19 10:12:36"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:36"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:36 +0000] "GET /health HTTP/1.1" 200 102 "-" "-" {"timestamp":"2026-05-19 10:12:36"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:36"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:36 +0000] "GET /api HTTP/1.1" 200 247 "-" "-" {"timestamp":"2026-05-19 10:12:36"}
+[33mwarn[39m: Redis connection failed, retrying in 50ms... {"timestamp":"2026-05-19 10:12:36"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:36 +0000] "GET /api HTTP/1.1" 200 247 "-" "-" {"timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:36 +0000] "GET /nonexistent HTTP/1.1" 404 30 "-" "-" {"timestamp":"2026-05-19 10:12:36"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:33 +0000] "GET /nonexistent HTTP/1.1" 404 30 "-" "-" {"timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:33"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:33"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:33"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:33 +0000] "GET /health HTTP/1.1" 200 102 "-" "-" {"timestamp":"2026-05-19 10:12:33"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis connection failed, retrying in 100ms... {"timestamp":"2026-05-19 10:12:33"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:33"}
+[32minfo[39m: ::ffff:127.0.0.1 - - [19/May/2026:09:12:33 +0000] "GET /health HTTP/1.1" 200 102 "-" "-" {"timestamp":"2026-05-19 10:12:33"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection failed, retrying in 150ms... {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection failed, retrying in 200ms... {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis rate limiter unavailable, using memory store {"error":"NOAUTH Authentication required.","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection failed, retrying in 250ms... {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:34"}
+[32minfo[39m: Redis connected successfully {"timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":["1"],"name":"select"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[31merror[39m: Redis error: NOAUTH Authentication required. {"command":{"args":[],"name":"info"},"stack":"ReplyError: NOAUTH Authentication required.\n    at parseError (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:179:12)\n    at parseType (/mnt/c/Users/USER/Desktop/Mama-Check/node_modules/redis-parser/lib/parser.js:302:14)","timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection failed, retrying in 1050ms... {"timestamp":"2026-05-19 10:12:34"}
+[33mwarn[39m: Redis connection closed {"timestamp":"2026-05-19 10:12:34"}

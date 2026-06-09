@@ -1,0 +1,13 @@
+node_modules/
+dist/
+logs/
+.env
+.github/
+.env.local
+.env.development
+.env.production.example
+.env.production
+.env.examples
+scripts/
+coverage/
+.env.test

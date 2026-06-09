@@ -1,0 +1,28 @@
+services:
+  # --- 1. Your Main Web Service ---
+  - type: web
+    name: mamacheck-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        # This special block automatically pulls the connection string from the Redis service we define below
+        fromService:
+          type: redis
+          name: mamacheck-cache
+          property: connectionString
+      # Add all your other environment variables here (MONGODB_URI, JWT_SECRET, etc.)
+      # - key: MONGODB_URI
+      #   value: your-production-uri
+
+  # --- 2. Your Redis Service ---
+  - type: redis
+    name: mamacheck-cache
+    # The 'free' plan is a good starting point. Check the note below for important details.
+    plan: free
+    # 'maxmemoryPolicy' defines how Redis removes old data when it's full.
+    # 'allkeys-lfu' (Least Frequently Used) is a sensible default for a cache [citation:3].
+    maxmemoryPolicy: allkeys-lfu
