@@ -6,11 +6,9 @@ import otpStore from "../utils/otpStore.js";
 import crypto from "node:crypto";
 import { hashPassword, comparePassword } from "../utils/passwordUtils.js";
 import jwt from "jsonwebtoken";
+import redis from "../config/redis.js";
 
 class AuthController {
-  /**
-   * Generate tokens for a user
-   */
   generateTokens(user) {
     const accessToken = jwt.sign(
       { userId: user._id, role: user.role, phone: user.phone },
@@ -26,6 +24,84 @@ class AuthController {
   }
 
   /**
+   * Register a new user account.
+   *
+   * Used by tests and CHEW onboarding flows to create a user directly
+   * (without the OTP + pregnancy flow).
+   *
+   * Accepts an optional `role` field. Valid roles: patient, chew, supervisor, admin.
+   * In production only admin callers should be able to set role to anything
+   * other than "patient" — enforce that at the route level with requireAdmin.
+   */
+  async register(req, res) {
+    try {
+      const {
+        phone,
+        password,
+        name,
+        role = "patient",
+        preferredLanguage = "en",
+      } = req.body;
+
+      if (!phone || !password) {
+        return res
+          .status(400)
+          .json({ error: "Phone and password are required" });
+      }
+
+      const phoneRegex = /^(\+?234|0)[789]\d{9}$/;
+      if (!phoneRegex.test(phone)) {
+        return res.status(400).json({ error: "Invalid phone number format" });
+      }
+
+      const allowedRoles = ["patient", "chew", "supervisor", "admin"];
+      const assignedRole = allowedRoles.includes(role) ? role : "patient";
+
+      const existing = await User.findOne({ phone });
+      if (existing) {
+        // Return 409 so callers can fall back to login
+        return res
+          .status(409)
+          .json({ error: "Phone number already registered" });
+      }
+
+      const hashedPassword = await hashPassword(password);
+
+      const user = new User({
+        phone,
+        name: name || "",
+        password: hashedPassword,
+        role: assignedRole,
+        preferredLanguage,
+        phoneVerified: false,
+        optOut: { isOptedOut: false },
+        consent: { sms: true, dataProcessing: true, consentDate: new Date() },
+      });
+
+      await user.save();
+
+      const { accessToken, refreshToken } = this.generateTokens(user);
+
+      logger.info(`User registered: ${user._id} (role: ${assignedRole})`);
+
+      return res.status(201).json({
+        success: true,
+        token: accessToken,
+        refreshToken,
+        user: {
+          id: user._id,
+          phone: user.phone,
+          name: user.name,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      logger.error("Register error:", error);
+      return res.status(500).json({ error: "Registration failed" });
+    }
+  }
+
+  /**
    * Send OTP for phone verification
    */
   async sendOTP(req, res) {
@@ -36,13 +112,11 @@ class AuthController {
         return res.status(400).json({ error: "Phone number is required" });
       }
 
-      // Validate Nigerian phone number format
       const phoneRegex = /^(\+?234|0)[789]\d{9}$/;
       if (!phoneRegex.test(phone)) {
         return res.status(400).json({ error: "Invalid phone number format" });
       }
 
-      // Rate limiting
       const rateLimitKey = `otp:rl:${phone}`;
       const lastRequest = await otpStore.get(rateLimitKey);
       if (lastRequest) {
@@ -51,33 +125,21 @@ class AuthController {
         });
       }
 
-      // Generate 6-digit OTP
       const otp = crypto.randomInt(100000, 1000000).toString();
 
-      // Store OTP with 5-minute expiration
-      await otpStore.set(
-        phone,
-        {
-          otp,
-          attempts: 0,
-          verified: false,
-        },
-        300,
-      );
-
-      // Store rate limit info with 60-second expiration
+      await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
       await otpStore.set(rateLimitKey, { timestamp: Date.now() }, 60);
 
       logger.info(`OTP generated for ${phone}`);
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: "OTP sent successfully",
         expiresIn: 300,
       });
     } catch (error) {
       logger.error("Send OTP error:", error);
-      res.status(500).json({ error: "Failed to send OTP" });
+      return res.status(500).json({ error: "Failed to send OTP" });
     }
   }
 
@@ -102,7 +164,6 @@ class AuthController {
       if (bypassOtp && otp.toString().length === 6) {
         logger.info(`Test mode: OTP bypass for ${phone}`);
 
-        // Find or create user
         let user = await User.findOne({ phone });
         if (!user) {
           user = new User({
@@ -110,6 +171,7 @@ class AuthController {
             role: "patient",
             phoneVerified: true,
             phoneVerifiedAt: new Date(),
+            optOut: { isOptedOut: false },
           });
           await user.save();
         } else if (!user.phoneVerified) {
@@ -119,7 +181,6 @@ class AuthController {
         }
 
         const { accessToken, refreshToken } = this.generateTokens(user);
-
         return res.status(200).json({
           success: true,
           token: accessToken,
@@ -133,11 +194,9 @@ class AuthController {
       if (!storedOTP) {
         return res.status(400).json({ error: "OTP not found or expired" });
       }
-
       if (storedOTP.verified) {
         return res.status(400).json({ error: "OTP already verified" });
       }
-
       if (storedOTP.attempts >= 3) {
         await otpStore.delete(phone);
         return res.status(400).json({
@@ -145,7 +204,14 @@ class AuthController {
         });
       }
 
-      if (storedOTP.otp !== otp) {
+      // Timing-safe comparison
+      const otpBuffer = Buffer.from(String(otp).padStart(6, "0"));
+      const storedBuffer = Buffer.from(String(storedOTP.otp).padStart(6, "0"));
+      const match =
+        otpBuffer.length === storedBuffer.length &&
+        crypto.timingSafeEqual(otpBuffer, storedBuffer);
+
+      if (!match) {
         storedOTP.attempts++;
         await otpStore.set(phone, storedOTP, 300);
         return res.status(401).json({
@@ -153,30 +219,26 @@ class AuthController {
         });
       }
 
-      // Mark as verified
       storedOTP.verified = true;
       await otpStore.set(phone, storedOTP, 300);
 
-      // Update user's phoneVerified status
       let user = await User.findOne({ phone });
-      if (!user) {
-        // Create user if doesn't exist
+      if (user) {
+        user.phoneVerified = true;
+        user.phoneVerifiedAt = new Date();
+        await user.save();
+      } else {
         user = new User({
           phone,
           role: "patient",
           phoneVerified: true,
           phoneVerifiedAt: new Date(),
+          optOut: { isOptedOut: false },
         });
-        await user.save();
-      } else {
-        user.phoneVerified = true;
-        user.phoneVerifiedAt = new Date();
         await user.save();
       }
 
       logger.info(`OTP verified for ${phone}`);
-
-      // Generate token for the user
       const { accessToken, refreshToken } = this.generateTokens(user);
 
       return res.status(200).json({
@@ -187,7 +249,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error("Verify OTP error:", error);
-      res.status(500).json({ error: "Failed to verify OTP" });
+      return res.status(500).json({ error: "Failed to verify OTP" });
     }
   }
 
@@ -232,9 +294,11 @@ class AuthController {
 
       logger.info(`User logged in: ${user._id} (${user.role})`);
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         accessToken,
+        // Also expose as `token` so the test helper `loginRes.body.token` works
+        token: accessToken,
         refreshToken,
         user: {
           id: user._id,
@@ -255,7 +319,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error("Login error:", error);
-      res.status(500).json({ error: "Login failed" });
+      return res.status(500).json({ error: "Login failed" });
     }
   }
 
@@ -265,7 +329,6 @@ class AuthController {
   async refreshToken(req, res) {
     try {
       const { refreshToken } = req.body;
-
       if (!refreshToken) {
         return res.status(400).json({ error: "Refresh token required" });
       }
@@ -283,49 +346,47 @@ class AuthController {
       const { accessToken, refreshToken: newRefreshToken } =
         this.generateTokens(user);
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         accessToken,
+        token: accessToken,
         refreshToken: newRefreshToken,
       });
     } catch (error) {
       logger.error("Refresh token error:", error);
-      res.status(401).json({ error: "Invalid or expired refresh token" });
+      return res
+        .status(401)
+        .json({ error: "Invalid or expired refresh token" });
     }
   }
 
   /**
-   * Logout user
+   * Logout — revoke token in Redis
    */
   async logout(req, res) {
     try {
       const token = req.token;
       if (token) {
         const decoded = jwt.decode(token);
-        if (decoded && decoded.exp) {
+        if (decoded?.exp) {
           const ttl = decoded.exp - Math.floor(Date.now() / 1000);
           if (ttl > 0) {
-            const redis = (await import("../config/redis.js")).default;
-            await redis.setex(`revoked:${token}`, ttl, "true");
+            // redis.setex(key, ttlSeconds, value)
+            await redis.setex(`revoked:${token}`, ttl, "1");
           }
         }
       }
 
       logger.info(`User logged out: ${req.user?._id}`);
-
-      res.status(200).json({
-        success: true,
-        message: "Logged out successfully",
-      });
+      return res
+        .status(200)
+        .json({ success: true, message: "Logged out successfully" });
     } catch (error) {
       logger.error("Logout error:", error);
-      res.status(500).json({ error: "Logout failed" });
+      return res.status(500).json({ error: "Logout failed" });
     }
   }
 
-  /**
-   * Change password
-   */
   async changePassword(req, res) {
     try {
       const { currentPassword, newPassword } = req.body;
@@ -336,7 +397,6 @@ class AuthController {
           .status(400)
           .json({ error: "Current and new password required" });
       }
-
       if (newPassword.length < 6) {
         return res
           .status(400)
@@ -345,7 +405,6 @@ class AuthController {
 
       const user = await User.findById(userId);
       const isValid = await comparePassword(currentPassword, user.password);
-
       if (!isValid) {
         return res.status(401).json({ error: "Current password is incorrect" });
       }
@@ -355,24 +414,18 @@ class AuthController {
       await user.save();
 
       logger.info(`Password changed for user: ${userId}`);
-
-      res.status(200).json({
-        success: true,
-        message: "Password changed successfully",
-      });
+      return res
+        .status(200)
+        .json({ success: true, message: "Password changed successfully" });
     } catch (error) {
       logger.error("Change password error:", error);
-      res.status(500).json({ error: "Failed to change password" });
+      return res.status(500).json({ error: "Failed to change password" });
     }
   }
 
-  /**
-   * Request password reset
-   */
   async forgotPassword(req, res) {
     try {
       const { phone } = req.body;
-
       if (!phone) {
         return res.status(400).json({ error: "Phone number required" });
       }
@@ -385,70 +438,54 @@ class AuthController {
         });
       }
 
-      // Generate raw reset token
       const rawResetToken = crypto.randomBytes(32).toString("hex");
-
-      // Hash the token before storing in database
       const hashedToken = crypto
         .createHash("sha256")
         .update(rawResetToken)
         .digest("hex");
 
-      const resetExpires = Date.now() + 3600000; // 1 hour
-
-      // Store the HASHED token, not the raw token
       user.resetPasswordToken = hashedToken;
-      user.resetPasswordExpires = resetExpires;
+      user.resetPasswordExpires = Date.now() + 3600000;
       await user.save();
 
-      // In a real implementation, you would send the RAW token to the user via SMS
-      // For development/testing, we can return it (remove in production)
       logger.info(`Password reset requested for ${phone}`);
 
-      // For development only - in production, send via SMS
       if (process.env.NODE_ENV !== "production") {
         return res.status(200).json({
           success: true,
           message: "If an account exists, you will receive reset instructions",
-          resetToken: rawResetToken, // Only for testing - remove in production
+          resetToken: rawResetToken,
         });
       }
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: "If an account exists, you will receive reset instructions",
       });
     } catch (error) {
       logger.error("Forgot password error:", error);
-      res.status(500).json({ error: "Failed to process request" });
+      return res.status(500).json({ error: "Failed to process request" });
     }
   }
 
-  /**
-   * Reset password with token
-   */
   async resetPassword(req, res) {
     try {
       const { token, newPassword } = req.body;
-
       if (!token || !newPassword) {
         return res
           .status(400)
           .json({ error: "Token and new password required" });
       }
-
       if (newPassword.length < 6) {
         return res
           .status(400)
           .json({ error: "Password must be at least 6 characters" });
       }
 
-      // Hash the submitted token to compare with stored hash
       const hashedToken = crypto
         .createHash("sha256")
         .update(token)
         .digest("hex");
-
       const user = await User.findOne({
         resetPasswordToken: hashedToken,
         resetPasswordExpires: { $gt: Date.now() },
@@ -467,20 +504,15 @@ class AuthController {
       await user.save();
 
       logger.info(`Password reset for user: ${user._id}`);
-
-      res.status(200).json({
-        success: true,
-        message: "Password reset successfully",
-      });
+      return res
+        .status(200)
+        .json({ success: true, message: "Password reset successfully" });
     } catch (error) {
       logger.error("Reset password error:", error);
-      res.status(500).json({ error: "Failed to reset password" });
+      return res.status(500).json({ error: "Failed to reset password" });
     }
   }
 
-  /**
-   * Get current user profile
-   */
   async getProfile(req, res) {
     try {
       const user = req.user;
@@ -498,7 +530,7 @@ class AuthController {
           }
         : { hasConsented: false };
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         user: {
           id: user._id,
@@ -527,13 +559,10 @@ class AuthController {
       });
     } catch (error) {
       logger.error("Get profile error:", error);
-      res.status(500).json({ error: "Failed to get profile" });
+      return res.status(500).json({ error: "Failed to get profile" });
     }
   }
 
-  /**
-   * Update user profile
-   */
   async updateProfile(req, res) {
     try {
       const updates = req.body;
@@ -544,12 +573,9 @@ class AuthController {
         "preferredLanguage",
         "trustedContact",
       ];
-
       const filteredUpdates = {};
       for (const key of allowedUpdates) {
-        if (updates[key] !== undefined) {
-          filteredUpdates[key] = updates[key];
-        }
+        if (updates[key] !== undefined) filteredUpdates[key] = updates[key];
       }
 
       const user = await User.findByIdAndUpdate(
@@ -559,21 +585,15 @@ class AuthController {
       ).select("-password");
 
       logger.info(`Profile updated for user: ${user._id}`);
-
-      res.status(200).json({
-        success: true,
-        user,
-        message: "Profile updated successfully",
-      });
+      return res
+        .status(200)
+        .json({ success: true, user, message: "Profile updated successfully" });
     } catch (error) {
       logger.error("Update profile error:", error);
-      res.status(500).json({ error: "Failed to update profile" });
+      return res.status(500).json({ error: "Failed to update profile" });
     }
   }
 
-  /**
-   * Opt out from messages
-   */
   async optOut(req, res) {
     try {
       const { reason } = req.body;
@@ -586,42 +606,32 @@ class AuthController {
       };
       await user.save();
 
-      logger.info(`User opted out: ${user._id}, reason: ${reason}`);
-
-      res.status(200).json({
+      logger.info(`User opted out: ${user._id}`);
+      return res.status(200).json({
         success: true,
         message: "You have been opted out from all messages",
       });
     } catch (error) {
       logger.error("Opt out error:", error);
-      res.status(500).json({ error: "Failed to opt out" });
+      return res.status(500).json({ error: "Failed to opt out" });
     }
   }
 
-  /**
-   * Opt back in
-   */
   async optIn(req, res) {
     try {
       const user = req.user;
-
-      user.optOut = {
-        isOptedOut: false,
-        reason: null,
-        date: null,
-      };
+      user.optOut = { isOptedOut: false, reason: null, date: null };
       await user.save();
 
       logger.info(`User opted back in: ${user._id}`);
-
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message:
           "You have been opted back in. You will start receiving messages again.",
       });
     } catch (error) {
       logger.error("Opt in error:", error);
-      res.status(500).json({ error: "Failed to opt in" });
+      return res.status(500).json({ error: "Failed to opt in" });
     }
   }
 

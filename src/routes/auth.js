@@ -246,7 +246,9 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
     try {
       await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
     } catch (_redisErr) {
-      // Redis unavailable — OTP still works via MongoDB
+      console.warn(
+        `Redis OTP storage failed for ${phone}: ${redisErr.message}`,
+      );
     }
 
     const result = await messagingService.sendSMS({
@@ -265,7 +267,7 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
       return res.status(500).json({
         error: "Failed to send OTP. Please try again.",
         twilioError:
-          process.env.NODE_ENV !== "production" ? result.error : undefined,
+          process.env.NODE_ENV === "production" ? undefined : result.error,
       });
     }
 

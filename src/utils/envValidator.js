@@ -14,6 +14,7 @@ const requiredEnvVars = [
   "GROQ_API_KEY",
   "NODE_ENV",
   "LOG_LEVEL",
+  "SMS_PROVIDER",
 ];
 
 const optionalEnvVars = [

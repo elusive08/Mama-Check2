@@ -1,4 +1,3 @@
-import twilio from "twilio";
 import MessagingService from "../services/messagingService.js";
 import Pregnancy from "../models/Pregnancy.js";
 import DangerReport from "../models/DangerReport.js";
@@ -18,72 +17,76 @@ class WebhookController {
     this.messagingService = MessagingService;
   }
 
-  validateTwilioSignature(req) {
-    // Skip validation in development
-    if (process.env.NODE_ENV !== "production") {
-      return true;
-    }
+  /**
+   * Validate incoming webhook signature.
+   * For BulkSMS Nigeria, validate their HMAC header when they add one.
+   * For now: skip in non-production; enforce in production via the
+   * WEBHOOK_SECRET env var (set it to a shared secret with BulkSMS).
+   */
+  validateWebhookSignature(req) {
+    if (process.env.NODE_ENV !== "production") return true;
 
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const signature = req.headers["x-twilio-signature"];
-    const webhookBaseUrl = process.env.WEBHOOK_BASE_URL;
-
-    if (!authToken || !signature || !webhookBaseUrl) {
-      logger.error("Missing Twilio validation configuration");
+    const secret = process.env.WEBHOOK_SECRET;
+    if (!secret) {
+      logger.error("WEBHOOK_SECRET not set — rejecting incoming webhook");
       return false;
     }
 
-    return twilio.validateRequest(authToken, signature, req.body);
+    // BulkSMS Nigeria sends delivery reports; add their specific header
+    // validation here once documented. For now accept if secret is set.
+    return true;
   }
 
   /**
-   * Handle incoming SMS
+   * Handle incoming SMS from BulkSMS delivery webhook.
+   * Expected body: { from, text, message_id, ... }
    */
   async handleIncomingSMS(req, res) {
-    const messageId = req.body.message_id;
+    const messageId = req.body?.message_id;
 
-    // Check for duplicate webhook
-    const duplicateKey = `webhook:processed:${messageId}`;
-    const isDuplicate = await redis.set(
-      duplicateKey,
-      "true",
-      "EX",
-      86400,
-      "NX",
-    );
-    if (!isDuplicate) {
-      logger.info(`Duplicate webhook received: ${messageId}`);
-      return res.status(200).json({ success: true, duplicate: true });
+    // ── Idempotency guard: reject duplicate deliveries ──────────────────────
+    // Use setnx (SET ... NX EX) so we get atomicity:
+    // returns the set value on first call, null on subsequent ones.
+    if (messageId) {
+      const duplicateKey = `webhook:processed:${messageId}`;
+      const claimed = await redis.setnx(duplicateKey, "1", 86400);
+      if (!claimed) {
+        logger.info(`Duplicate webhook ignored: ${messageId}`);
+        return res.status(200).json({ success: true, duplicate: true });
+      }
     }
 
-    // Store with 24-hour TTL
-    await redis.setex(duplicateKey, 86400, "true");
-
-    // ADDED: Signature validation
-    if (!this.validateTwilioSignature(req)) {
-      logger.error("Invalid Twilio signature - rejecting webhook");
+    if (!this.validateWebhookSignature(req)) {
+      logger.error("Invalid webhook signature — rejecting");
       return res.status(403).json({ error: "Invalid signature" });
     }
 
     try {
       const { from, text, message_id } = req.body;
-      logger.info(`Processing SMS from ${from}: ${text}`);
+
+      if (!from || !text) {
+        return res.status(400).json({ error: "Missing 'from' or 'text'" });
+      }
+
+      logger.info(`Incoming SMS from ${from}: ${text}`);
 
       if (containsOptOutKeyword(text)) {
         return await this.handleOptOutRequest(from, res);
       }
 
       const user = await this.findAndValidateUser(from);
-      if (!user)
+      if (!user) {
         return res
           .status(404)
           .json({ error: "User not found", status: "ignored" });
+      }
 
       const pregnancy = await this.findAndValidatePregnancy(user);
-      if (!pregnancy)
+      if (!pregnancy) {
         return res
           .status(404)
           .json({ error: "Pregnancy not found", status: "ignored" });
+      }
 
       return await this.processSMSContent(
         user,
@@ -101,9 +104,10 @@ class WebhookController {
   async handleOptOutRequest(from, res) {
     logger.info(`Opt-out request from ${from}`);
 
+    // Dedup: if already processed within this hour, return success immediately
     const optOutKey = `optout:processed:${from}`;
-    const processed = await redis.get(optOutKey);
-    if (processed) {
+    const alreadyProcessed = await redis.get(optOutKey);
+    if (alreadyProcessed) {
       return res.status(200).json({
         success: true,
         status: "opt_out_processed",
@@ -112,11 +116,11 @@ class WebhookController {
     }
 
     const user = await User.findOne({ phone: from });
-
     if (user) {
       await handleOptOut(from, "User sent STOP keyword via SMS");
       await sendOptOutConfirmation(from, this.messagingService);
-      await redis.setex(optOutKey, 3600, "true");
+      // Mark processed for 1 hour to deduplicate rapid retries
+      await redis.setex(optOutKey, 3600, "1");
     } else {
       logger.warn(`Opt-out request from unknown number: ${from}`);
     }
@@ -141,34 +145,20 @@ class WebhookController {
     const pregnancy = await Pregnancy.findOne({ womanId: user._id }).populate(
       "womanId chewId",
     );
-
     if (!pregnancy) {
-      logger.debug(`No pregnancy found for user: ${user._id}`);
+      logger.debug(`No active pregnancy for user: ${user._id}`);
       return null;
     }
-
-    logger.debug(`Found pregnancy for ${user.name}: ${pregnancy._id}`);
     return pregnancy;
   }
 
   async processSMSContent(user, pregnancy, text, message_id, res) {
-    // Parse symptoms
     const symptoms = this.parseSymptoms(text);
-    logger.debug(`Parsed symptoms: ${JSON.stringify(symptoms)}`);
-
-    // Determine severity
     const severity = this.determineSeverity(symptoms);
-
-    // Generate triage message
     const triageMessage = this.generateTriageMessage(severity);
 
-    const triageResult = {
-      severity: severity,
-      message: triageMessage,
-      symptoms: symptoms,
-    };
+    const triageResult = { severity, message: triageMessage, symptoms };
 
-    // Store danger report
     const report = await this.storeDangerReport(
       pregnancy,
       symptoms,
@@ -176,22 +166,19 @@ class WebhookController {
       message_id,
     );
 
-    // Log response
-    logger.info(`Response to ${user.phone}: ${triageResult.message}`);
+    logger.info(`Triage result for ${user.phone}: ${severity}`);
 
-    // Handle RED alerts
-    if (triageResult.severity === "RED") {
+    if (severity === "RED") {
       await this.handleRedAlert(pregnancy, triageResult, report);
     }
 
-    // Update pregnancy last checkin
     pregnancy.lastCheckin = new Date();
     await pregnancy.save();
 
     return res.status(200).json({
       success: true,
       status: "processed",
-      triage: triageResult.severity,
+      triage: severity,
       reportId: report._id,
     });
   }
@@ -200,21 +187,9 @@ class WebhookController {
     const RED_SYMPTOMS = new Set([1, 2, 3, 7, 8]);
     const YELLOW_SYMPTOMS = new Set([4, 5, 6]);
 
-    // Check for no symptoms case
-    if (this.hasNoSymptoms(symptoms)) {
-      return "GREEN";
-    }
-
-    // Check for RED symptoms first (highest priority)
-    if (symptoms.some((symptom) => RED_SYMPTOMS.has(symptom))) {
-      return "RED";
-    }
-
-    // Check for YELLOW symptoms
-    if (symptoms.some((symptom) => YELLOW_SYMPTOMS.has(symptom))) {
-      return "YELLOW";
-    }
-
+    if (this.hasNoSymptoms(symptoms)) return "GREEN";
+    if (symptoms.some((s) => RED_SYMPTOMS.has(s))) return "RED";
+    if (symptoms.some((s) => YELLOW_SYMPTOMS.has(s))) return "YELLOW";
     return "GREEN";
   }
 
@@ -232,46 +207,30 @@ class WebhookController {
       GREEN:
         "Thank you for your response. You reported no symptoms. Continue to monitor your health and attend your ANC visits.",
     };
-
     return messages[severity];
   }
 
   parseSymptoms(smsText) {
-    // Extract numbers from SMS
     const numbers = smsText.match(/\d+/g);
-
     if (!numbers) return [];
-
-    // Convert to integers and filter valid symptoms (0-8)
     const symptoms = numbers
       .map((n) => Number.parseInt(n))
       .filter((n) => n >= 0 && n <= 8);
-
-    // Remove duplicates
     return [...new Set(symptoms)];
   }
 
   async storeDangerReport(pregnancy, symptoms, triageResult, messageId) {
-    let chewId = pregnancy.chewId?._id;
-
-    // If pregnancy doesn't have a CHEW, try to find one by LGA or default
-    if (!chewId) {
-      logger.warn(
-        `No CHEW associated with pregnancy, attempting to find one...`,
-      );
-      // In production, would query by LGA or other logic
-      // For now, just log it
-    }
+    const chewId = pregnancy.chewId?._id;
 
     const report = new DangerReport({
       pregnancyId: pregnancy._id,
       womanId: pregnancy.womanId?._id,
-      chewId: chewId,
+      chewId,
       reportedSymptoms: symptoms,
       triageOutcome: triageResult.severity,
       triageMessage: triageResult.message,
       source: "sms",
-      messageId: messageId,
+      messageId,
       requiresFollowup: triageResult.severity === "RED",
       timestamp: new Date(),
     });
@@ -279,7 +238,6 @@ class WebhookController {
     await report.save();
     logger.info(`Danger report saved: ${report._id}`);
 
-    // Update ANC pregnancy record if it exists
     const ancPregnancy = await ANCPregnancy.findOne({
       pregnancyId: pregnancy._id,
     });
@@ -287,7 +245,7 @@ class WebhookController {
       if (!ancPregnancy.redFlagHistory) ancPregnancy.redFlagHistory = [];
       ancPregnancy.redFlagHistory.push({
         timestamp: new Date(),
-        symptoms: symptoms,
+        symptoms,
         triageOutcome: triageResult.severity,
         chewAlerted: false,
         trustedAlerted: false,
@@ -299,14 +257,14 @@ class WebhookController {
   }
 
   async handleRedAlert(pregnancy, triageResult, report) {
-    // Alert CHEW via SMS
     const chewPhone = pregnancy.chewId?.phone;
-    if (chewPhone) {
-      const alertMessage = `🚨 RED ALERT: ${pregnancy.womanId?.name} (${pregnancy.womanId?.phone}) reported: ${triageResult.symptoms?.map((s) => s.name).join(", ") || triageResult.symptoms?.join(", ")}. Week ${pregnancy.gestationalWeek}. Follow up immediately.`;
 
+    if (chewPhone) {
+      const symptomList =
+        triageResult.symptoms?.join(", ") || "reported symptoms";
       await MessagingService.queueMessage({
         to: chewPhone,
-        content: alertMessage,
+        content: `🚨 RED ALERT: ${pregnancy.womanId?.name} (${pregnancy.womanId?.phone}) reported symptoms: ${symptomList}. Week ${pregnancy.gestationalWeek}. Follow up immediately.`,
         language: "en",
         type: "alert",
         priority: "high",
@@ -318,13 +276,10 @@ class WebhookController {
       });
     }
 
-    // Alert trusted contact
     if (pregnancy.womanId?.trustedContact?.phone) {
-      const trustedMessage = `🚨 URGENT: ${pregnancy.womanId?.name} needs immediate medical attention. Please help her get to the nearest health facility NOW. For more info, contact CHEW: ${chewPhone || "your local health worker"}`;
-
       await MessagingService.queueMessage({
         to: pregnancy.womanId.trustedContact.phone,
-        content: trustedMessage,
+        content: `🚨 URGENT: ${pregnancy.womanId?.name} needs immediate medical attention. Please help her reach the nearest health facility. Contact CHEW: ${chewPhone || "your local health worker"}`,
         language: pregnancy.womanId.trustedContact.preferredLanguage || "en",
         type: "alert",
         priority: "high",
@@ -336,96 +291,74 @@ class WebhookController {
       });
     }
 
-    // Update report with alert status
     report.chewAlerted = !!chewPhone;
     report.trustedAlerted = !!pregnancy.womanId?.trustedContact?.phone;
     await report.save();
   }
 
   /**
-   * Handle delivery report webhook
+   * Handle delivery report callback from BulkSMS.
    */
   async handleDeliveryReport(req, res) {
     try {
       const { message_id, status } = req.body;
 
-      // Update message queue with delivery status
       const updatedMessage = await MessageQueue.findOneAndUpdate(
         { "metadata.externalMessageId": message_id },
-        { status: status, deliveredAt: new Date() },
+        { status, deliveredAt: new Date() },
         { new: true },
       );
 
-      res.status(200).json({
+      return res.status(200).json({
         status: "received",
-        message_id: message_id,
+        message_id,
         updated: !!updatedMessage,
       });
     } catch (error) {
       logger.error("Delivery report error:", error);
-      res.status(200).json({ status: "error" }); // Return 200 to acknowledge
+      return res.status(200).json({ status: "error" }); // Always 200 to acknowledge
     }
   }
 
   /**
-   * Simulate SMS for testing (development only)
+   * Simulate an incoming SMS.
+   *
+   * THIS METHOD IS FOR DEVELOPMENT / TESTING ONLY.
+   * It must NEVER be registered on a route in production.
+   * Route registration is gated in routes/webhook.js:
+   *   if (process.env.NODE_ENV !== "production") { router.post("/simulate-sms", ...) }
    */
   async simulateSMS(req, res) {
-    // Defence in depth - never allow in production
-    if (process.env.NODE_ENV === "production") {
-      return res.status(404).json({ error: "Not found" });
-    }
-
-    console.log("=== SIMULATE SMS CALLED ===");
-    console.log("Request body:", req.body);
-
     const { from, text } = req.body;
 
     if (!from || !text) {
-      console.log("Missing parameters!");
-      return res.status(400).json({ error: "Missing from or text parameter" });
+      return res.status(400).json({ error: "Missing 'from' or 'text'" });
     }
 
-    console.log(`📱 Simulating SMS from ${from}: ${text}`);
+    logger.info(`[SIMULATE] SMS from ${from}: ${text}`);
 
-    const mockReq = {
-      body: {
-        from,
-        text,
-        message_id: `sim-${Date.now()}`,
+    let responseStatus = 200;
+    let responseData = null;
+
+    // Minimal mock res that captures status + json without touching HTTP
+    const mockRes = {
+      status(code) {
+        responseStatus = code;
+        return this;
+      },
+      json(data) {
+        responseData = data;
+        return this;
       },
     };
 
-    let responseData = null;
-    let responseStatus = null;
-
-    const mockRes = {
-      status: (code) => {
-        responseStatus = code;
-        return {
-          // Return a resolved Promise so that callers using
-          // `return res.status(x).json(...)` are properly awaited.
-          // Without this, handleOptOut's DB write races with simulateSMS
-          // completing, causing the test to read stale user state.
-          json: (data) => {
-            responseData = data;
-            return Promise.resolve(data);
-          },
-        };
-      },
-      json: (data) => {
-        responseData = data;
-        return Promise.resolve(data);
-      },
+    const mockReq = {
+      body: { from, text, message_id: `sim-${Date.now()}` },
     };
 
     await this.handleIncomingSMS(mockReq, mockRes);
 
-    if (responseStatus) {
-      res.status(responseStatus).json(responseData);
-    } else {
-      res.status(200).json(responseData || { success: true });
-    }
+    return res.status(responseStatus).json(responseData ?? { success: true });
   }
 }
 

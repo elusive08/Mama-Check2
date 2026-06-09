@@ -6,7 +6,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/v1/webhook/sms:
+ * /api/v1/webhook/incoming:
  *   post:
  *     tags:
  *       - Webhook
@@ -31,9 +31,12 @@ const router = express.Router();
  *     responses:
  *       200:
  *         description: SMS processed successfully
+ *       401:
+ *         description: Invalid signature (production)
+ *       429:
+ *         description: Too many requests
  */
-// Incoming SMS webhook
-router.post("/sms", webhookLimiter, (req, res) =>
+router.post("/incoming", webhookLimiter, (req, res) =>
   webhookController.handleIncomingSMS(req, res),
 );
 
@@ -60,8 +63,9 @@ router.post("/sms", webhookLimiter, (req, res) =>
  *     responses:
  *       200:
  *         description: Delivery report processed successfully
+ *       429:
+ *         description: Too many requests
  */
-// Delivery report webhook
 router.post("/delivery", webhookLimiter, (req, res) =>
   webhookController.handleDeliveryReport(req, res),
 );
@@ -82,33 +86,26 @@ router.post("/delivery", webhookLimiter, (req, res) =>
  *           schema:
  *             type: object
  *             required:
- *               - phone
- *               - message
+ *               - from
+ *               - text
  *             properties:
- *               phone:
+ *               from:
  *                 type: string
  *                 example: "+2348012345678"
- *               message:
+ *               text:
  *                 type: string
- *                 example: "1 means YES, 2 means NO"
+ *                 example: "STOP"
  *     responses:
  *       200:
  *         description: SMS simulation successful
  *       400:
  *         description: Invalid simulation payload
- *       500:
- *         description: Server error
+ *       404:
+ *         description: Endpoint not available in production
  */
-// Mock webhook for testing (development and test environments)
-if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test") {
+// Development only - NEVER exposed in production
+if (process.env.NODE_ENV !== "production") {
   router.post("/simulate-sms", (req, res) =>
-    webhookController.simulateSMS(req, res),
-  );
-}
-
-// Also add a test endpoint for SMS simulation with the correct path
-if (process.env.NODE_ENV === "test") {
-  router.post("/test-sms", (req, res) =>
     webhookController.simulateSMS(req, res),
   );
 }

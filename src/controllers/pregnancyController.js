@@ -35,6 +35,7 @@ class PregnancyController {
       const finalPhone = phone || req.body.womanDetails?.phone;
       const finalOtp = otp || req.body.otp;
       const finalClinic = clinicName || req.body.clinicName;
+
       // Validate required fields
       if (!finalPhone) {
         return res.status(400).json({ error: "Phone number is required" });

@@ -247,19 +247,35 @@ const safeDeleteOne = async (model, filter, context) => {
   }
 };
 
-// Helper: Register or login user
+// Helper: Register or login user with retry logic for rate limits and existing users
 const registerOrLoginUser = async (phone, password, name, role = "patient") => {
   let retries = 0;
   const maxRetries = 3;
 
   while (retries < maxRetries) {
-    const res = await request(app).post("/api/v1/auth/register").send({
-      phone,
-      password,
-      name,
-      role,
-      preferredLanguage: "en",
-    });
+    // Use different endpoint for CHEW users
+    let res;
+    if (role === "chew") {
+      res = await request(app)
+        .post("/api/v1/auth/register-chew")
+        .send({
+          phone,
+          password,
+          firstName: name.split(" ")[0],
+          lastName: name.split(" ")[1] || "",
+          phcName: "Test PHC",
+          lga: "Test LGA",
+          state: "Test State",
+        });
+    } else {
+      res = await request(app).post("/api/v1/auth/register").send({
+        phone,
+        password,
+        name,
+        role,
+        preferredLanguage: "en",
+      });
+    }
 
     if (res.status !== 429) {
       if (res.status === 409 || res.body?.error?.includes("exists")) {
@@ -325,14 +341,26 @@ describe("SMS Workflow Integration Tests", () => {
 
       await delay(1000);
 
-      const chewSetup = await registerOrLoginUser(
-        chewPhone,
-        "password123",
-        "Test CHEW",
-        "chew",
-      );
-      chewId = chewSetup.userId;
-      chewToken = chewSetup.token;
+      const chewRegisterRes = await request(app)
+        .post("/api/v1/auth/register-chew")
+        .send({
+          phone: chewPhone,
+          firstName: "Test",
+          lastName: "CHEW",
+          password: "password123",
+          phcName: "Test PHC",
+          lga: "Test LGA",
+          state: "Test State",
+        });
+
+      if (chewRegisterRes.status !== 201) {
+        throw new Error(`CHEW registration failed: ${chewRegisterRes.status}`);
+      }
+
+      chewToken = chewRegisterRes.body.token;
+      const jwt = await import("jsonwebtoken");
+      const decoded = jwt.decode(chewToken);
+      chewId = decoded.userId;
 
       console.log(`Setup complete - Woman ID: ${womanId}, CHEW ID: ${chewId}`);
     } catch (error) {
@@ -699,4 +727,3 @@ describe("SMS Workflow Integration Tests", () => {
     console.log("Test cleanup completed");
   });
 });
- 

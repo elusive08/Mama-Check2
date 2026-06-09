@@ -1,47 +1,60 @@
+/**
+ * services/messagingService — MessagingService
+ *
+ * High-level SMS service: queue, send, retry, bulk dispatch, templates.
+ * Delegates all actual sending to config/sms.js (SMSProvider).
+ *
+ * Architecture:
+ *   Controller → MessagingService.queueMessage() → MessageQueue (DB)
+ *                MessagingService.processQueue()  → SMSProvider.send() → BulkSMS API
+ */
+
 import MessageQueue from "../models/MessageQueue.js";
-import config from "../config/index.js";
 import SystemEvent from "../models/SystemEvent.js";
-import twilio from "twilio";
+import smsProvider from "../config/sms.js";
+
+// How long to wait between messages during queue processing.
+// Stays within BulkSMS production rate limit (1000 req/min = ~17/sec).
+const SEND_INTERVAL_MS = 100;
+
+// Maximum messages fetched per queue-processing run.
+const QUEUE_BATCH_SIZE = 100;
 
 class MessagingService {
   constructor() {
-    this.accountSid = config.twilio.accountSid;
-    this.authToken = config.twilio.authToken;
-    this.fromNumber = config.twilio.phoneNumber;
+    // Mock mode: set SMS_MOCK=true (or NODE_ENV=test) to skip real API calls
+    // without needing to swap provider config.
+    this.mock =
+      process.env.SMS_MOCK === "true" || process.env.NODE_ENV === "test";
 
-    console.log("DEBUG: MessagingService constructor", {
-      hasAccountSid: !!this.accountSid,
-      hasAuthToken: !!this.authToken,
-      nodeEnv: process.env.NODE_ENV,
-      mockSmsService: process.env.MOCK_SMS_SERVICE,
-    });
-
-    // Initialize Twilio client if credentials are provided
-    if (this.accountSid && this.authToken) {
-      try {
-        this.client = twilio(this.accountSid, this.authToken);
-        console.log("DEBUG: Twilio client initialized successfully");
-      } catch (err) {
-        console.error("DEBUG: Failed to initialize Twilio client", err);
-      }
-    } else {
-      console.log("DEBUG: Twilio credentials missing, client not initialized");
+    if (this.mock) {
+      console.info(
+        "MessagingService: running in MOCK mode — no SMS will be sent",
+      );
     }
-
-    // Check if we're in test environment
-    this.isTestEnvironment =
-      process.env.NODE_ENV === "test" ||
-      process.env.MOCK_SMS_SERVICE === "true";
-
-    console.log("DEBUG: isTestEnvironment:", this.isTestEnvironment);
   }
 
+  // ─── Queuing ───────────────────────────────────────────────────────────────
+
   /**
-   * Queue a message for sending
-   * @param {Object} messageData - Message details
-   * @returns {Promise<Object>} Queued message
+   * Persist a message to the queue for later processing.
+   *
+   * @param {object} messageData
+   * @param {string}  messageData.to
+   * @param {string}  messageData.content       - Final message text (already rendered)
+   * @param {string}  [messageData.templateId]
+   * @param {string}  [messageData.language]
+   * @param {string}  [messageData.type]
+   * @param {'high'|'normal'|'low'} [messageData.priority='normal']
+   * @param {Date}    [messageData.scheduledFor=now]
+   * @param {object}  [messageData.metadata={}]
+   * @returns {Promise<MessageQueue>}
    */
   async queueMessage(messageData) {
+    if (!messageData.to) throw new Error("queueMessage: 'to' is required");
+    if (!messageData.content)
+      throw new Error("queueMessage: 'content' is required");
+
     const message = new MessageQueue({
       to: messageData.to,
       templateId: messageData.templateId,
@@ -53,114 +66,135 @@ class MessagingService {
       metadata: messageData.metadata || {},
     });
 
-    return await message.save();
+    return message.save();
   }
 
+  // ─── Sending ───────────────────────────────────────────────────────────────
+
   /**
-   * Send SMS via Twilio
-   * @param {Object} message - Message object
-   * @returns {Promise<Object>} Send result
+   * Send (or mock-send) a single message object.
+   * Updates the MessageQueue document in-place with the outcome.
+   *
+   * Accepts either a Mongoose document or a plain object.
+   *
+   * @param {object} message - MessageQueue doc or plain { to, content, ... }
+   * @returns {Promise<{ success: boolean, messageId?: string, error?: string }>}
    */
   async sendSMS(message) {
-    // Handle both plain objects and mongoose documents
-    const isMongooseDoc = typeof message.save === "function";
+    const isDoc = typeof message.save === "function";
 
-    if (this.isTestEnvironment || !this.client) {
-      console.log(`[MOCK] Sending SMS to ${message.to}: ${message.content}`);
-      if (isMongooseDoc) {
+    // ── Mock path ────────────────────────────────────────────────────────────
+    if (this.mock) {
+      const mockId = `mock-${Date.now()}`;
+      console.log(`[MOCK SMS] to=${message.to} body="${message.content}"`);
+
+      if (isDoc) {
         message.status = "delivered";
         message.sentAt = new Date();
         message.deliveredAt = new Date();
-        message.metadata = message.metadata || {};
-        message.metadata.externalMessageId = `mock-${Date.now()}`;
+        message.metadata = { ...message.metadata, externalMessageId: mockId };
+        await message.save();
+      }
+
+      return { success: true, messageId: mockId, mock: true };
+    }
+
+    // ── Real send path ───────────────────────────────────────────────────────
+    // Mark as "sending" so the queue processor doesn't pick it up again
+    if (isDoc && message.status !== "sending") {
+      message.status = "sending";
+      await message.save();
+    }
+
+    const result = await smsProvider.send(message.to, message.content, {
+      // Route OTP-type messages through the low-latency gateway
+      gateway: message.type === "otp" ? "otp" : undefined,
+      reference: message._id?.toString(),
+    });
+
+    if (result.success) {
+      if (isDoc) {
+        message.status = "delivered";
+        message.sentAt = new Date();
+        message.deliveredAt = new Date();
+        message.metadata = {
+          ...message.metadata,
+          externalMessageId: result.messageId,
+          cost: result.cost,
+          gateway: result.gateway,
+          sandbox: result.sandbox,
+        };
         await message.save();
       }
 
       return {
         success: true,
-        messageId: `mock-${Date.now()}`,
+        messageId: result.messageId,
         to: message.to,
-        mock: true,
+        cost: result.cost,
+        sandbox: result.sandbox,
       };
     }
 
-    try {
-      // Format phone number for Twilio (E.164 format)
-      let formattedPhone = message.to;
-      if (!formattedPhone.startsWith("+")) {
-        if (formattedPhone.startsWith("0")) {
-          // Assume Nigeria (234) if starts with 0
-          formattedPhone = "+234" + formattedPhone.substring(1);
-        } else {
-          // Add + if missing
-          formattedPhone = "+" + formattedPhone;
-        }
-      }
-
-      // Real Twilio API call
-      const response = await this.client.messages.create({
-        body: message.content,
-        to: formattedPhone,
-        from: this.fromNumber,
-      });
-
-      // Update message status
-      message.status = "delivered";
-      message.sentAt = new Date();
-      message.deliveredAt = new Date();
-      message.metadata = message.metadata || {};
-      message.metadata.externalMessageId = response.sid;
-
-      if (typeof message.save === "function") {
-        await message.save();
-      }
-
-      return {
-        success: true,
-        messageId: response.sid,
-        to: message.to,
-        status: response.status,
-      };
-    } catch (error) {
-      console.error("SMS send failed:", error);
-
-      // Handle retry logic
-      if (message) {
-        message.retryCount = (message.retryCount || 0) + 1;
-
-        if (message.retryCount >= (message.maxRetries || 3)) {
-          message.status = "failed";
-          message.error = error.message;
-
-          if (typeof message.save === "function") {
-            await message.save();
-          }
-
-          // Log to system events
-          await this.logFailedMessage(message, error);
-        } else {
-          // Reschedule for retry (exponential backoff)
-          const backoffMinutes = Math.pow(2, message.retryCount);
-          message.scheduledFor = new Date(Date.now() + backoffMinutes * 60000);
-
-          if (typeof message.save === "function") {
-            await message.save();
-          }
-        }
-      }
-
-      return {
-        success: false,
-        error: error.message,
-        code: error.code, // Twilio error code e.g. 21608 = unverified number
-        moreInfo: error.moreInfo, // Twilio docs URL for this error
-      };
-    }
+    // ── Failure path ─────────────────────────────────────────────────────────
+    return this._handleSendFailure(message, result, isDoc);
   }
 
   /**
-   * Process message queue
-   * @returns {Promise<Array>} Processing results
+   * Handle a failed send: decide whether to retry or mark as permanently failed.
+   * Uses result.retryable from the provider to avoid retrying auth/validation errors.
+   */
+  async _handleSendFailure(message, result, isDoc) {
+    if (!isDoc) {
+      // Plain object — nothing to persist, just return the failure
+      return { success: false, error: result.error, bsngCode: result.bsngCode };
+    }
+
+    message.retryCount = (message.retryCount || 0) + 1;
+    const maxRetries = message.maxRetries || 3;
+
+    // Non-retryable errors (auth/validation): fail immediately regardless of retryCount
+    const exhausted = message.retryCount >= maxRetries || !result.retryable;
+
+    if (exhausted) {
+      message.status = "failed";
+      message.error = result.error;
+      message.metadata = {
+        ...message.metadata,
+        bsngCode: result.bsngCode,
+        failedAt: new Date().toISOString(),
+      };
+      await message.save();
+      await this._logFailedMessage(message, result);
+    } else {
+      // Exponential backoff: 2^retryCount minutes (2 min, 4 min, 8 min...)
+      const backoffMs = Math.pow(2, message.retryCount) * 60 * 1000;
+      message.status = "queued";
+      message.scheduledFor = new Date(Date.now() + backoffMs);
+      await message.save();
+
+      console.warn(
+        `SMS to ${message.to} failed (attempt ${message.retryCount}/${maxRetries}). ` +
+          `Retrying in ${backoffMs / 60000} min. Error: ${result.error}`,
+      );
+    }
+
+    return {
+      success: false,
+      error: result.error,
+      bsngCode: result.bsngCode,
+      retryable: !exhausted,
+      retryCount: message.retryCount,
+    };
+  }
+
+  // ─── Queue processing ──────────────────────────────────────────────────────
+
+  /**
+   * Fetch due messages and send them in order of priority then schedule time.
+   * Called by the scheduler (e.g. every 30 seconds).
+   *
+   * @returns {Promise<{ sent: number, failed: number, results: Array }>}
    */
   async processQueue() {
     const dueMessages = await MessageQueue.find({
@@ -168,79 +202,111 @@ class MessagingService {
       scheduledFor: { $lte: new Date() },
     })
       .sort({ priority: -1, scheduledFor: 1 })
-      .limit(100);
+      .limit(QUEUE_BATCH_SIZE);
+
+    if (dueMessages.length === 0) {
+      return { sent: 0, failed: 0, results: [] };
+    }
 
     const results = [];
+    let sent = 0;
+    let failed = 0;
 
     for (const message of dueMessages) {
+      // Claim the message immediately to prevent double-processing
       message.status = "sending";
       await message.save();
 
       const result = await this.sendSMS(message);
       results.push(result);
 
-      // Rate limiting: wait 100ms between messages (skip in test)
-      if (!this.isTestEnvironment) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      if (result.success) sent++;
+      else failed++;
+
+      // Rate-limit guard — skip in mock/test mode
+      if (!this.mock) {
+        await new Promise((resolve) => setTimeout(resolve, SEND_INTERVAL_MS));
       }
     }
 
-    return results;
+    if (sent > 0 || failed > 0) {
+      console.info(
+        `Queue processing complete: ${sent} sent, ${failed} failed (batch of ${dueMessages.length})`,
+      );
+    }
+
+    return { sent, failed, results };
   }
 
+  // ─── Template rendering ────────────────────────────────────────────────────
+
   /**
-   * Format message using template
-   * @param {Object} template - Message template
-   * @param {Object} variables - Template variables
-   * @returns {string} Formatted message
+   * Render a message template by replacing {{variable}} placeholders.
+   * Truncates to 160 chars with "..." suffix to stay within single-SMS billing.
+   *
+   * @param {{ content: string }} template
+   * @param {Record<string, string>} variables
+   * @returns {string}
    */
   formatTemplate(template, variables) {
+    if (!template?.content)
+      throw new Error("Template must have a content field");
+
     let message = template.content;
 
     for (const [key, value] of Object.entries(variables)) {
-      message = message.replace(new RegExp(`{{${key}}}`, "g"), value);
+      const regex = new RegExp(String.raw`\{\{${key}\}\}`, "g");
+      message = message.replace(regex, String(value));
     }
 
-    // Ensure message fits SMS character limit
-    if (message.length > 160) {
+    if (message.length > SMS_MAX_LENGTH) {
       message = message.substring(0, 157) + "...";
     }
 
     return message;
   }
 
-  async logFailedMessage(message, error) {
+  // ─── Bulk queuing ──────────────────────────────────────────────────────────
+
+  /**
+   * Queue multiple messages in one call.
+   * Does NOT send immediately — the queue processor handles dispatch.
+   *
+   * @param {Array<object>} messages
+   * @returns {Promise<Array<MessageQueue>>}
+   */
+  async sendBulk(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new Error("sendBulk requires a non-empty array of messages");
+    }
+
+    return Promise.all(messages.map((m) => this.queueMessage(m)));
+  }
+
+  // ─── Internals ─────────────────────────────────────────────────────────────
+
+  async _logFailedMessage(message, result) {
     try {
       await SystemEvent.create({
         type: "SMS_FAILURE",
         severity: "HIGH",
-        message: `SMS delivery failed for ${message.to}`,
+        message: `SMS permanently failed for ${message.to}`,
         details: {
           messageId: message._id,
-          error: error.message,
+          error: result.error,
+          bsngCode: result.bsngCode,
           retryCount: message.retryCount,
+          type: message.type,
         },
       });
     } catch (logError) {
-      console.error("Failed to log system event:", logError);
+      // Don't let logging failure cascade
+      console.error("Failed to log SMS_FAILURE system event:", logError);
     }
-  }
-
-  /**
-   * Send bulk messages
-   * @param {Array} messages - Array of message objects
-   * @returns {Promise<Array>} Results
-   */
-  async sendBulk(messages) {
-    const queuedMessages = [];
-
-    for (const message of messages) {
-      const queued = await this.queueMessage(message);
-      queuedMessages.push(queued);
-    }
-
-    return queuedMessages;
   }
 }
+
+// SMS_MAX_LENGTH used inside formatTemplate
+const SMS_MAX_LENGTH = 160;
 
 export default new MessagingService();
