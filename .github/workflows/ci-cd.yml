@@ -65,13 +65,11 @@ jobs:
           OTP_EXPIRY_MINUTES=5
           FRONTEND_URL=http://localhost:3000
           WEBHOOK_BASE_URL=http://localhost:3000/api/webhooks
-
-          # BulkSMS Configuration for CI
-          SMS_PROVIDER=bulksms
-          BULKSMS_API_KEY=test-api-key-for-ci
-          BULKSMS_SENDER=MamaCheck
+          GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+          SMS_PROVIDER=${{ secrets.SMS_PROVIDER }}
+          BULKSMS_API_KEY=${{ secrets.BULKSMS_API_KEY }}
+          BULKSMS_SENDER_ID=${{ secrets.BULKSMS_SENDER_ID }}
           SMS_MOCK=true
-          BULKSMS_API_URL=https://www.bulksmsnigeria.com/api/sandbox/v2
           EOF
           echo "Test environment file created"
 
@@ -87,12 +85,11 @@ jobs:
           REDIS_URL: redis://localhost:6379
           LOG_LEVEL: debug
           BYPASS_OTP_FOR_TESTING: true
-          # BulkSMS environment variables
-          SMS_PROVIDER: bulksms
-          BULKSMS_API_KEY: test-api-key-for-ci
-          BULKSMS_SENDER: MamaCheck
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SMS_PROVIDER: ${{ secrets.SMS_PROVIDER }}
+          BULKSMS_API_KEY: ${{ secrets.BULKSMS_API_KEY }}
+          BULKSMS_SENDER_ID: ${{ secrets.BULKSMS_SENDER_ID }}
           SMS_MOCK: true
-          BULKSMS_API_URL: https://www.bulksmsnigeria.com/api/sandbox/v2
         run: npm test -- --coverage --watchAll=false --testTimeout=30000
 
       - name: Verify test coverage thresholds
@@ -469,7 +466,6 @@ jobs:
           ## SMS Integration
           - Provider: BulkSMS Nigeria
           - Status: Configured with mock mode for CI
-          - Production: Ready with API key
 
           ## Code Quality & Coverage
           - Test Coverage minimum threshold: 70% line coverage
