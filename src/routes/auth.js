@@ -26,8 +26,6 @@ const signToken = (user) =>
 
 const PHONE_REGEX = /^(\+?234|0)[789]\d{9}$/;
 
-// ---------------------------------------------------------------------------
-
 /**
  * @swagger
  * /api/v1/auth/register:
@@ -245,7 +243,7 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
     // Best-effort Redis write for dedup/rate-limiting
     try {
       await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
-    } catch (_redisErr) {
+    } catch (redisErr) {
       console.warn(
         `Redis OTP storage failed for ${phone}: ${redisErr.message}`,
       );
