@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -23,120 +24,151 @@ import swaggerSpec from "../swagger.js";
 
 const app = express();
 
-// ── Security ──────────────────────────────────────────────────────────────────
+const isProduction = process.env.NODE_ENV === "production";
+const DOCS_API_KEY = process.env.DOCS_API_KEY;
 
+// ── 1. Request tracking ───────────────────────────────────────────────────────
+app.use(requestIdMiddleware);
+app.use(requestLoggingMiddleware);
+
+// ── 2. HTTP access logging ────────────────────────────────────────────────────
+app.use(morgan(isProduction ? "combined" : "dev", { stream: logger.stream }));
+
+// ── 3. Helmet ─────────────────────────────────────────────────────────────────
+// 'unsafe-inline' + 'unsafe-eval' are required by Swagger UI.
+// All other directives remain strict.
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
-        fontSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https://validator.swagger.io"],
         connectSrc: ["'self'"],
-        frameSrc: ["'none'"],
+        frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
       },
     },
-    crossOriginEmbedderPolicy: true,
+    crossOriginEmbedderPolicy: false,
+    hsts: isProduction
+      ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+      : false,
   }),
 );
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
+// ── 4. CORS ───────────────────────────────────────────────────────────────────
 app.use(cors(getCorsOptions()));
 
-// ── Request tracking (before body parsing so IDs are available everywhere) ────
-app.use(requestIdMiddleware);
-app.use(requestLoggingMiddleware);
-
-// ── HTTP access logging ───────────────────────────────────────────────────────
-app.use(morgan("combined", { stream: logger.stream }));
-
-// ── Body parsing ──────────────────────────────────────────────────────────────
+// ── 5. Body parsing ───────────────────────────────────────────────────────────
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// ── Swagger / API docs ────────────────────────────────────────────────────────
+// ── 6. Swagger docs ───────────────────────────────────────────────────────────
+// Protected by DOCS_API_KEY in all environments.
+// If the key is set, it is always enforced — in development AND production.
+// If the key is not set, docs are only accessible in development (never in production).
+//
+// Access: GET /docs?key=<DOCS_API_KEY>
+// On first visit the key is validated, an httpOnly session cookie is set,
+// and the browser is redirected to a clean URL so the key is not visible
+// in the address bar on subsequent requests.
 
-const isProduction = process.env.NODE_ENV === "production";
-const docsApiKey = process.env.DOCS_API_KEY;
-
-const validateDocsKey = (req) => {
-  // In development, always allow access
-  if (!isProduction) return true;
-
-  // In production, DOCS_API_KEY must be set or docs are disabled
-  if (!docsApiKey) return false;
-
-  // Accept key via Authorization header OR ?key= query param
-  const authHeader = req.headers.authorization;
-  if (authHeader === `Bearer ${docsApiKey}`) return true;
-  return req.query.key === docsApiKey;
-};
-
-// TEMP DEBUG — remove after fixing
-app.get("/debug-swagger", (req, res) => {
-  const paths = Object.keys(swaggerSpec.paths || {});
-  res.json({
-    pathCount: paths.length,
-    paths,
-    info: swaggerSpec.info,
-    hasComponents: !!swaggerSpec.components,
-  });
-});
-
-// Helmet blocks Swagger UI's inline scripts and external CDN assets by default.
-// Override CSP for the /docs subtree only so the rest of the app stays strict.
 app.use("/docs", (req, res, next) => {
-  res.setHeader(
-    "Content-Security-Policy",
-    [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net",
-      "style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net",
-      "img-src 'self' data: https:",
-      "font-src 'self' https://unpkg.com https://cdn.jsdelivr.net",
-      "connect-src 'self'",
-      "frame-src 'none'",
-      "object-src 'none'",
-    ].join("; "),
-  );
-  next();
-});
+  const isProd = isProduction;
 
-// Gate the entire /docs subtree — key required in production
-app.use("/docs", (req, res, next) => {
-  if (validateDocsKey(req)) return next();
+  // Key not configured — allow in development, block in production
+  if (!DOCS_API_KEY) {
+    if (!isProd) return next();
+    return res.status(401).json({
+      success: false,
+      message: "API documentation is not publicly available.",
+    });
+  }
+
+  // Key is configured — always enforce regardless of environment.
+  // On first visit: validate key via query param, set session cookie,
+  // redirect to clean URL so the key is not visible in the address bar.
+  if (req.query.key !== undefined) {
+    if (typeof req.query.key !== "string") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid API key. Access the docs at /docs?key=<DOCS_API_KEY>",
+      });
+    }
+
+    const keyBuffer = Buffer.from(DOCS_API_KEY);
+    const inputBuffer = Buffer.from(req.query.key);
+    const isValid =
+      keyBuffer.length === inputBuffer.length &&
+      timingSafeEqual(keyBuffer, inputBuffer);
+
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid API key. Access the docs at /docs?key=<DOCS_API_KEY>",
+      });
+    }
+
+    // Valid key — set httpOnly session cookie (8 hours) so subsequent
+    // browser asset requests don't need the key on every sub-request
+    const sessionToken = createHmac("sha256", DOCS_API_KEY)
+      .update("docs-session")
+      .digest("hex");
+
+    res.cookie("docs_access", sessionToken, {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: isProd,
+      maxAge: 8 * 60 * 60 * 1000,
+    });
+
+    // Redirect to clean URL — key no longer visible in address bar
+    const cleanUrl =
+      req.path === "/" || req.path === "" ? "/docs/" : `/docs${req.path}`;
+    return res.redirect(cleanUrl);
+  }
+
+  // Subsequent asset requests — validate via session cookie
+  const cookieHeader = req.headers.cookie || "";
+  const cookieMatch = cookieHeader.match(/(?:^|;\s*)docs_access=([^;]*)/);
+  const cookieValue = cookieMatch ? decodeURIComponent(cookieMatch[1]) : null;
+
+  const expectedToken = createHmac("sha256", DOCS_API_KEY)
+    .update("docs-session")
+    .digest("hex");
+  const cookieBuffer = Buffer.from(cookieValue || "");
+  const expectedBuffer = Buffer.from(expectedToken);
+  const isCookieValid =
+    cookieBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(cookieBuffer, expectedBuffer);
+
+  if (isCookieValid) return next();
+
   return res.status(401).json({
-    error: "Unauthorized",
-    message:
-      isProduction && !docsApiKey
-        ? "API documentation is disabled (DOCS_API_KEY not configured)"
-        : "Access to API documentation requires a valid API key",
+    success: false,
+    message: "Access the docs at /docs?key=<DOCS_API_KEY>",
   });
 });
 
-// Always mount Swagger UI — the gate above handles access control
+app.use("/docs", swaggerUi.serve);
 app.use(
   "/docs",
-  swaggerUi.serve,
   swaggerUi.setup(swaggerSpec, {
     swaggerOptions: {
       persistAuthorization: true,
       displayOperationId: false,
-      url: undefined, // use inline spec, not a URL fetch
     },
     customCss: ".topbar { display: none }",
   }),
 );
 
 logger.info(
-  `Swagger UI available at /docs${isProduction ? " (requires DOCS_API_KEY)" : " (open in development)"}`,
+  `Swagger UI available at /docs${isProduction ? " (requires DOCS_API_KEY)" : " (open — set DOCS_API_KEY to protect)"}`,
 );
 
-// ── Utility endpoints (no rate limit, no auth) ────────────────────────────────
+// ── 7. Health check ───────────────────────────────────────────────────────────
 
 /**
  * @swagger
@@ -151,11 +183,8 @@ logger.info(
  */
 app.get("/health", async (req, res) => {
   const dbConnected = mongoose.connection.readyState === 1;
-
-  // Use the already-imported singleton — no dynamic import needed
   const redisHealth = redisClient.getHealth();
   const redisConnected = redisHealth.connected;
-
   const isHealthy = dbConnected && redisConnected;
 
   return res.status(isHealthy ? 200 : 503).json({
@@ -163,7 +192,6 @@ app.get("/health", async (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: Math.floor(process.uptime()),
     environment: process.env.NODE_ENV || "development",
-    // Kept at root level for backward compatibility with existing tests
     database: {
       connected: dbConnected,
       status: dbConnected ? "connected" : "disconnected",
@@ -197,13 +225,8 @@ app.get("/api", (req, res) => {
   });
 });
 
-// ── API routes ────────────────────────────────────────────────────────────────
-// IMPORTANT: generalLimiter must be registered BEFORE the route handlers,
-// not after. The original code registered it after webhookRoutes, meaning
-// webhook calls were never rate-limited by generalLimiter.
-
-// Webhooks get their own limiter (defined in rateLimiter.js / webhook.js)
-// so they are exempt from generalLimiter — register them before it.
+// ── 8. API routes ─────────────────────────────────────────────────────────────
+// Webhooks get their own limiter — register before generalLimiter
 app.use("/api/v1/webhook", webhookRoutes);
 
 // Apply general rate limiting to all remaining /api routes
@@ -213,7 +236,7 @@ app.use("/api", generalLimiter);
 app.use("/api/v1", routes);
 app.use("/api/v1/anc", ancRoutes);
 
-// ── 404 fallthrough ───────────────────────────────────────────────────────────
+// ── 9. 404 fallthrough ────────────────────────────────────────────────────────
 app.use((req, res) => {
   return res.status(404).json({
     error: "Endpoint not found",
@@ -222,7 +245,7 @@ app.use((req, res) => {
   });
 });
 
-// ── Global error handler (must be last) ──────────────────────────────────────
+// ── 10. Global error handler (must be last) ───────────────────────────────────
 app.use(errorHandler);
 
 // ── Server lifecycle ──────────────────────────────────────────────────────────
@@ -234,7 +257,6 @@ export const startServer = (port) => {
     logger.info(`Server running on port ${port} [${process.env.NODE_ENV}]`);
   });
 
-  // Propagate unhandled connection-level errors (e.g. EADDRINUSE)
   server.on("error", (err) => {
     logger.error("Server error:", err);
     process.exit(1);
