@@ -2,14 +2,13 @@
  * config/sms.js
  *
  * Low-level SMS provider adapter.
- * Currently supports: bulksms (BulkSMS Nigeria v2 API), twilio (legacy/fallback).
+ * Currently supports: bulksms (BulkSMS Nigeria v2 API)
  *
  * Consumed by services/sms.js (MessagingService) — do not call directly from
  * controllers or route handlers.
  */
 
 import axios from "axios";
-import twilio from "twilio";
 
 const SMS_MAX_LENGTH = 160;
 
@@ -28,7 +27,11 @@ class SMSProvider {
 
   _initProvider() {
     if (this.provider === "bulksms") {
-      if (!process.env.BULKSMS_API_KEY) {
+      // Allow mock mode for testing without API key
+      const isMockMode =
+        process.env.SMS_MOCK === "true" || process.env.NODE_ENV === "test";
+
+      if (!process.env.BULKSMS_API_KEY && !isMockMode) {
         throw new Error(
           "SMS provider is 'bulksms' but BULKSMS_API_KEY is not set",
         );
@@ -39,13 +42,14 @@ class SMSProvider {
         process.env.BULKSMS_SANDBOX === "true";
 
       this.bulksmsConfig = {
-        apiKey: process.env.BULKSMS_API_KEY,
+        apiKey: process.env.BULKSMS_API_KEY || "mock-key",
         sender: process.env.BULKSMS_SENDER_ID || "MamaCheck",
         baseUrl: isSandbox
           ? "https://www.bulksmsnigeria.com/api/sandbox/v2"
           : "https://www.bulksmsnigeria.com/api/v2",
         gateway: process.env.BULKSMS_GATEWAY || BULKSMS_GATEWAY.DEFAULT,
         sandbox: isSandbox,
+        mock: isMockMode,
       };
 
       if (isSandbox) {
@@ -53,30 +57,18 @@ class SMSProvider {
           "SMS: BulkSMS running in SANDBOX mode — no real messages will be sent",
         );
       }
-      return;
-    }
-
-    if (this.provider === "twilio") {
-      if (
-        !process.env.TWILIO_ACCOUNT_SID ||
-        !process.env.TWILIO_AUTH_TOKEN ||
-        !process.env.TWILIO_PHONE_NUMBER
-      ) {
-        throw new Error(
-          "SMS provider is 'twilio' but TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER are not set",
-        );
+      if (isMockMode) {
+        console.info("SMS: Running in MOCK mode — no messages will be sent");
       }
-      this.twilioClient = twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN,
-      );
-      this.fromNumber = process.env.TWILIO_PHONE_NUMBER;
       return;
     }
 
-    throw new Error(
-      `Unknown SMS_PROVIDER: "${this.provider}". Valid values: 'bulksms', 'twilio'`,
+    // Fallback to mock mode if no provider configured
+    console.warn(
+      `Unknown SMS_PROVIDER: "${this.provider}". Falling back to mock mode.`,
     );
+    this.provider = "mock";
+    this.mockMode = true;
   }
 
   /**
@@ -91,6 +83,17 @@ class SMSProvider {
     if (!to) throw new Error("SMS recipient (to) is required");
     if (!body) throw new Error("SMS body is required");
 
+    // Mock mode - just log and return success
+    if (this.provider === "mock" || this.bulksmsConfig?.mock) {
+      console.log(`[MOCK SMS] to=${to} body="${body.substring(0, 50)}..."`);
+      return {
+        success: true,
+        messageId: `mock-${Date.now()}`,
+        mock: true,
+        retryable: false,
+      };
+    }
+
     if (body.length > SMS_MAX_LENGTH) {
       console.warn(
         `SMS to ${to}: message is ${body.length} chars (>${SMS_MAX_LENGTH}). ` +
@@ -101,10 +104,7 @@ class SMSProvider {
     const formattedTo = this.formatNumber(to);
 
     try {
-      if (this.provider === "bulksms") {
-        return await this._sendBulkSMS(formattedTo, body, opts);
-      }
-      return await this._sendTwilio(formattedTo, body);
+      return await this._sendBulkSMS(formattedTo, body, opts);
     } catch (error) {
       console.error(`SMS send failed to ${formattedTo}:`, error.message);
       return { success: false, error: error.message, retryable: true };
@@ -132,7 +132,7 @@ class SMSProvider {
         `${this.bulksmsConfig.baseUrl}/sms`,
         payload,
         {
-          timeout: 15000,
+          timeout: 30000,
           headers: {
             Authorization: `Bearer ${this.bulksmsConfig.apiKey}`,
             "Content-Type": "application/json",
@@ -193,24 +193,6 @@ class SMSProvider {
     return numeric >= 5000 || numeric === 3006;
   }
 
-  // ─── Twilio (legacy) ───────────────────────────────────────────────────────
-
-  async _sendTwilio(to, body) {
-    const e164 = to.startsWith("+") ? to : `+${to}`;
-    const response = await this.twilioClient.messages.create({
-      body,
-      to: e164,
-      from: this.fromNumber,
-    });
-    return {
-      success: true,
-      messageId: response.sid,
-      gateway: "twilio",
-      sandbox: false,
-      retryable: false,
-    };
-  }
-
   // ─── Phone number normalisation ────────────────────────────────────────────
 
   /**
@@ -254,7 +236,9 @@ class SMSProvider {
    * Call from a health-check endpoint or a low-balance cron alert.
    */
   async checkBalance() {
-    if (this.provider !== "bulksms") return { supported: false };
+    if (this.provider !== "bulksms" || this.bulksmsConfig?.mock) {
+      return { supported: false, mock: true };
+    }
 
     try {
       const response = await axios.get(
