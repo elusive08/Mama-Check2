@@ -64,37 +64,77 @@ const isProduction = process.env.NODE_ENV === "production";
 const docsApiKey = process.env.DOCS_API_KEY;
 
 const validateDocsKey = (req) => {
+  // In development, always allow access
   if (!isProduction) return true;
+
+  // In production, DOCS_API_KEY must be set or docs are disabled
   if (!docsApiKey) return false;
 
+  // Accept key via Authorization header OR ?key= query param
   const authHeader = req.headers.authorization;
   if (authHeader === `Bearer ${docsApiKey}`) return true;
-
   return req.query.key === docsApiKey;
 };
 
-// Gate the entire /docs subtree — applies to both .serve and .setup
+// TEMP DEBUG — remove after fixing
+app.get("/debug-swagger", (req, res) => {
+  const paths = Object.keys(swaggerSpec.paths || {});
+  res.json({
+    pathCount: paths.length,
+    paths,
+    info: swaggerSpec.info,
+    hasComponents: !!swaggerSpec.components,
+  });
+});
+
+// Helmet blocks Swagger UI's inline scripts and external CDN assets by default.
+// Override CSP for the /docs subtree only so the rest of the app stays strict.
+app.use("/docs", (req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net",
+      "img-src 'self' data: https:",
+      "font-src 'self' https://unpkg.com https://cdn.jsdelivr.net",
+      "connect-src 'self'",
+      "frame-src 'none'",
+      "object-src 'none'",
+    ].join("; "),
+  );
+  next();
+});
+
+// Gate the entire /docs subtree — key required in production
 app.use("/docs", (req, res, next) => {
   if (validateDocsKey(req)) return next();
   return res.status(401).json({
     error: "Unauthorized",
-    message: "Access to API documentation requires a valid API key",
+    message:
+      isProduction && !docsApiKey
+        ? "API documentation is disabled (DOCS_API_KEY not configured)"
+        : "Access to API documentation requires a valid API key",
   });
 });
 
-if (docsApiKey || !isProduction) {
-  app.use(
-    "/docs",
-    swaggerUi.serve,
-    swaggerUi.setup(swaggerSpec, {
-      swaggerOptions: { persistAuthorization: true, displayOperationId: false },
-      customCss: ".topbar { display: none }",
-    }),
-  );
-  logger.info(
-    `Swagger UI available at /docs${isProduction ? " (API key protected)" : ""}`,
-  );
-}
+// Always mount Swagger UI — the gate above handles access control
+app.use(
+  "/docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayOperationId: false,
+      url: undefined, // use inline spec, not a URL fetch
+    },
+    customCss: ".topbar { display: none }",
+  }),
+);
+
+logger.info(
+  `Swagger UI available at /docs${isProduction ? " (requires DOCS_API_KEY)" : " (open in development)"}`,
+);
 
 // ── Utility endpoints (no rate limit, no auth) ────────────────────────────────
 
