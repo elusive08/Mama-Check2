@@ -14,9 +14,9 @@ const SMS_MAX_LENGTH = 160;
 
 // BulkSMS Nigeria gateway options — choose based on use case
 const BULKSMS_GATEWAY = {
-  DEFAULT: "direct-corporate", // Highest deliverability
-  OTP: "otp", // Low-latency, for time-sensitive OTPs
-  DUAL: "dual-backup", // Failover to second gateway automatically
+  DEFAULT: "direct-corporate",
+  OTP: "otp",
+  DUAL: "dual-backup",
 };
 
 class SMSProvider {
