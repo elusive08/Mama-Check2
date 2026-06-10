@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 // Reliable absolute path — works regardless of CWD on Render/any host
 const __filename = fileURLToPath(import.meta.url);
-const __dirnames = dirname(__filename);
+const __dirname = dirname(__filename);
 
 const options = {
   definition: {
