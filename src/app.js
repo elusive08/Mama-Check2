@@ -53,8 +53,41 @@ app.use(requestLoggingMiddleware);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// Swagger UI — development only
-if (process.env.NODE_ENV !== "production") {
+const isProduction = process.env.NODE_ENV === "production";
+const docsApiKey = process.env.DOCS_API_KEY;
+
+// Helper to validate API key
+const validateDocsKey = (req) => {
+  if (!isProduction) return true;
+  if (!docsApiKey) return false;
+
+  // Check Authorization header or query param
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader === `Bearer ${docsApiKey}`) {
+    return true;
+  }
+
+  const queryKey = req.query.key;
+  if (queryKey && queryKey === docsApiKey) {
+    return true;
+  }
+
+  return false;
+};
+
+// Swagger UI
+app.use("/docs", (req, res, next) => {
+  if (validateDocsKey(req)) {
+    next();
+  } else {
+    res.status(401).json({
+      error: "Unauthorized",
+      message: "Access to API documentation requires a valid API key",
+    });
+  }
+});
+
+if (docsApiKey || !isProduction) {
   app.use(
     "/docs",
     swaggerUi.serve,
@@ -66,7 +99,9 @@ if (process.env.NODE_ENV !== "production") {
       customCss: `.topbar { display: none }`,
     }),
   );
-  logger.info("Swagger UI available at /docs");
+  logger.info(
+    `Swagger UI available at /docs${isProduction ? " (protected)" : ""}`,
+  );
 }
 
 /**
