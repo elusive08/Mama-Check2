@@ -301,13 +301,35 @@ class WebhookController {
    */
   async handleDeliveryReport(req, res) {
     try {
-      const { message_id, status } = req.body;
+      // LOG EVERYTHING to see what BulkSMS is sending
+      console.log("=== DELIVERY REPORT RECEIVED ===");
+      console.log("Timestamp:", new Date().toISOString());
+      console.log("Request Headers:", JSON.stringify(req.headers, null, 2));
+      console.log("Request Body:", JSON.stringify(req.body, null, 2));
+
+      const { message_id, status, delivery_status, gateway, cost } = req.body;
 
       const updatedMessage = await MessageQueue.findOneAndUpdate(
         { "metadata.externalMessageId": message_id },
-        { status, deliveredAt: new Date() },
+        {
+          status: delivery_status || status || "delivered",
+          deliveredAt: new Date(),
+          "metadata.deliveryStatus": delivery_status,
+          "metadata.deliveryGateway": gateway,
+          "metadata.deliveryCost": cost,
+        },
         { new: true },
       );
+
+      if (updatedMessage) {
+        console.log(
+          `✅ Updated message ${message_id} status to ${delivery_status || status}`,
+        );
+      } else {
+        console.warn(
+          `⚠️ No message found with externalMessageId: ${message_id}`,
+        );
+      }
 
       return res.status(200).json({
         status: "received",
@@ -316,6 +338,7 @@ class WebhookController {
       });
     } catch (error) {
       logger.error("Delivery report error:", error);
+      console.error("Delivery report error details:", error.stack);
       return res.status(200).json({ status: "error" }); // Always 200 to acknowledge
     }
   }

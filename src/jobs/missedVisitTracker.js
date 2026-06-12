@@ -564,8 +564,8 @@ class MissedVisitTracker {
 
     return await User.findOne({
       role: "supervisor",
-      "address.lga": chew.lga,
-      "address.state": chew.state,
+      lga: chew.lga,
+      state: chew.state,
     });
   }
 

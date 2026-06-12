@@ -10,36 +10,136 @@ import express from "express";
 import { comparePassword, hashPassword } from "../utils/passwordUtils.js";
 import messagingService from "../services/messagingService.js";
 import config from "../config/index.js";
+import emailService from "../services/emailService.js";
+import logger from "../utils/logger.js";
 import otpStore from "../utils/otpStore.js";
 import crypto from "node:crypto";
+import mongoose from "mongoose";
 
 const router = express.Router();
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
-
 const signToken = (user) =>
   jwt.sign({ userId: user._id, role: user.role }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
   });
 
 const PHONE_REGEX = /^(\+?234|0)[789]\d{9}$/;
+const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 
+// Middleware to check if user is admin (for protected admin routes)
+const requireAdmin = async (req, res, next) => {
+  try {
+    const token = req.header("Authorization")?.replace("Bearer ", "");
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.userId);
+    if (user?.role !== "admin") {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    req.user = user;
+    next();
+  } catch (error) {
+    logger.error("Admin auth error:", error.message);
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+};
+
+// Helper functions for forgot-password
+// Helper functions for forgot-password
+async function findUserByIdentifier(email, phone) {
+  const query = {};
+  if (email) query.email = email.toLowerCase();
+  if (phone) query.phone = phone;
+
+  console.log(`[PASSWORD RESET] Searching for user with:`, query);
+
+  const user = await User.findOne(query);
+
+  if (user) {
+    console.log(`[PASSWORD RESET] User found: ${user._id}`);
+    console.log(`[PASSWORD RESET] - Email: ${user.email || "not set"}`);
+    console.log(`[PASSWORD RESET] - Phone: ${user.phone}`);
+    console.log(`[PASSWORD RESET] - Role: ${user.role}`);
+  } else {
+    console.log(`[PASSWORD RESET] No user found with query:`, query);
+  }
+
+  return user;
+}
+
+async function generateAndSaveResetToken(user) {
+  const rawResetToken = crypto.randomBytes(32).toString("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(rawResetToken)
+    .digest("hex");
+
+  user.resetPasswordToken = hashedToken;
+  user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+  await user.save();
+
+  return rawResetToken;
+}
+
+async function sendResetNotifications(user, resetToken) {
+  let emailSent = false;
+  let smsSent = false;
+
+  // Send email if available
+  if (user.email) {
+    const emailResult = await emailService.sendPasswordResetEmail(
+      user.email,
+      resetToken,
+      user.firstName || user.name,
+    );
+    emailSent = emailResult.success;
+    if (emailResult.success) {
+      logger.info(`Password reset email sent to ${user.email}`);
+    } else {
+      logger.error(
+        `Failed to send password reset email to ${user.email}: ${emailResult.error}`,
+      );
+    }
+  }
+
+  // Send SMS if phone exists and email failed or not available
+  if (user.phone && (!user.email || !emailSent)) {
+    const smsResult = await messagingService.sendSMS({
+      to: user.phone,
+      content: `Your password reset token is: ${resetToken}. Valid for 15 minutes. Do not share this code.`,
+      type: "password_reset",
+    });
+    smsSent = smsResult.success;
+    if (smsResult.success) {
+      logger.info(`Password reset SMS sent to ${user.phone}`);
+    } else {
+      logger.error(
+        `Failed to send password reset SMS to ${user.phone}: ${smsResult.error}`,
+      );
+    }
+  }
+
+  return { emailSent, smsSent };
+}
+
+function sendResetResponse(res, data) {
+  return res.status(200).json(data);
+}
+
+// CHEW REGISTRATION (Admin only - creates User + CHEWProfile)
 /**
  * @swagger
- * /api/v1/auth/register:
+ * /api/v1/auth/register-chew:
  *   post:
  *     tags:
  *       - Auth
- *     summary: Step 1 — Create patient account
- *     description: >
- *       Registers a new patient with name, phone, and password.
- *       After this call, the account exists but phone is unverified.
- *       Call /request-otp next to send a verification code, then
- *       /verify-otp to activate the account.
- *       Role is always "patient" — use /register-chew for CHEW accounts.
- *     security: []
+ *     summary: Register a new CHEW (Admin only)
+ *     description: Creates a CHEW user account and CHEWProfile in one atomic transaction.
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -47,129 +147,195 @@ const PHONE_REGEX = /^(\+?234|0)[789]\d{9}$/;
  *           schema:
  *             type: object
  *             required:
+ *               - email
  *               - phone
+ *               - firstName
+ *               - lastName
  *               - password
- *               - name
+ *               - phcName
+ *               - lga
  *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "chew@example.com"
  *               phone:
  *                 type: string
- *                 example: "+2348012345678"
+ *                 example: "08012345678"
+ *               firstName:
+ *                 type: string
+ *                 example: "John"
+ *               lastName:
+ *                 type: string
+ *                 example: "Smith"
  *               password:
  *                 type: string
  *                 format: password
  *                 minLength: 8
- *                 example: "SecurePassword123!"
- *               name:
+ *                 example: "SecurePass123"
+ *               phcName:
  *                 type: string
- *                 example: "Amaka Obi"
- *               preferredLanguage:
+ *                 example: "Central PHC Ikeja"
+ *               lga:
  *                 type: string
- *                 enum: ["en", "pidgin", "yo", "ha", "ig"]
- *                 default: "en"
+ *                 example: "Ikeja"
+ *               state:
+ *                 type: string
+ *                 example: "Lagos"
  *     responses:
  *       201:
- *         description: Account created — proceed to /request-otp to verify phone
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 token:
- *                   type: string
- *                 user:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                     name:
- *                       type: string
- *                     phone:
- *                       type: string
- *                     role:
- *                       type: string
- *                     phoneVerified:
- *                       type: boolean
+ *         description: CHEW registered successfully
  *       400:
  *         description: Validation error
  *       409:
- *         description: Phone number already registered
- *       500:
- *         description: Server error
+ *         description: Email or phone already registered
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
  */
-router.post("/register", registrationLimiter, async (req, res) => {
-  try {
-    const { phone, password, name, preferredLanguage = "en" } = req.body;
+router.post(
+  "/register-chew",
+  registrationLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    if (!phone || !password || !name) {
-      return res
-        .status(400)
-        .json({ error: "Phone, password, and name are required" });
-    }
+    try {
+      const {
+        email,
+        phone,
+        firstName,
+        lastName,
+        password,
+        phcName,
+        lga,
+        state,
+      } = req.body;
 
-    if (!PHONE_REGEX.test(phone)) {
-      return res
-        .status(400)
-        .json({ error: "Invalid Nigerian phone number format" });
-    }
+      // Validation
+      if (
+        !email ||
+        !phone ||
+        !firstName ||
+        !lastName ||
+        !password ||
+        !phcName ||
+        !lga
+      ) {
+        return res.status(400).json({
+          error:
+            "Email, phone, firstName, lastName, password, phcName, and lga are required",
+        });
+      }
 
-    if (password.length < 8) {
-      return res
-        .status(400)
-        .json({ error: "Password must be at least 8 characters" });
-    }
+      if (!EMAIL_REGEX.test(email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
 
-    const VALID_LANGUAGES = ["en", "pidgin", "yo", "ha", "ig"];
-    if (!VALID_LANGUAGES.includes(preferredLanguage)) {
-      return res.status(400).json({
-        error: `preferredLanguage must be one of: ${VALID_LANGUAGES.join(", ")}`,
+      if (!PHONE_REGEX.test(phone)) {
+        return res
+          .status(400)
+          .json({ error: "Invalid Nigerian phone number format" });
+      }
+
+      if (password.length < 8) {
+        return res
+          .status(400)
+          .json({ error: "Password must be at least 8 characters" });
+      }
+
+      // Check existing by email OR phone
+      const existingUser = await User.findOne({
+        $or: [{ email: email.toLowerCase() }, { phone }],
       });
+
+      if (existingUser) {
+        if (existingUser.email === email.toLowerCase()) {
+          return res.status(409).json({ error: "Email already registered" });
+        }
+        return res
+          .status(409)
+          .json({ error: "Phone number already registered" });
+      }
+
+      // Generate PHC ID
+      const phcId = `PHC-${lga.toUpperCase().replace(/\s+/g, "-")}-${Date.now()}`;
+      const hashedPassword = await hashPassword(password);
+      const fullName = `${firstName.trim()} ${lastName.trim()}`;
+
+      // Create User
+      const newChew = await User.create(
+        [
+          {
+            email: email.toLowerCase(),
+            phone,
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            name: fullName,
+            state,
+            lga,
+            password: hashedPassword,
+            role: "chew",
+            phoneVerified: true,
+            consent: {
+              sms: true,
+              dataProcessing: true,
+              consentDate: new Date(),
+            },
+            optOut: { isOptedOut: false },
+          },
+        ],
+        { session },
+      );
+
+      // Create CHEWProfile
+      await CHEWProfile.create(
+        [
+          {
+            userId: newChew[0]._id,
+            phcId,
+            phcName,
+            lga,
+            state: state || "Unknown",
+            phone,
+            isActive: true,
+          },
+        ],
+        { session },
+      );
+
+      await session.commitTransaction();
+
+      const token = signToken(newChew[0]);
+
+      res.status(201).json({
+        success: true,
+        message: "CHEW registered successfully",
+        token,
+        user: {
+          id: newChew[0]._id,
+          firstName: newChew[0].firstName,
+          lastName: newChew[0].lastName,
+          name: newChew[0].name,
+          email: newChew[0].email,
+          phone: newChew[0].phone,
+          role: newChew[0].role,
+          phcId,
+          state: newChew[0].state,
+          lga: newChew[0].lga,
+        },
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      console.error("Register CHEW error:", error);
+      res.status(500).json({ error: "CHEW registration failed" });
+    } finally {
+      session.endSession();
     }
-
-    const existingUser = await User.findOne({ phone });
-    if (existingUser) {
-      return res
-        .status(409)
-        .json({ error: "This phone number is already registered" });
-    }
-
-    const hashedPassword = await hashPassword(password);
-
-    const newUser = await User.create({
-      phone,
-      password: hashedPassword,
-      name: name.trim(),
-      role: "patient",
-      preferredLanguage,
-      phoneVerified: false, // must verify via OTP after registration
-    });
-
-    const token = signToken(newUser);
-
-    res.status(201).json({
-      success: true,
-      message:
-        "Account created. Please verify your phone number — call /request-otp to receive your code.",
-      token,
-      user: {
-        id: newUser._id,
-        name: newUser.name,
-        phone: newUser.phone,
-        role: newUser.role,
-        preferredLanguage: newUser.preferredLanguage,
-        phoneVerified: false,
-      },
-    });
-  } catch (error) {
-    console.error("Register error:", error);
-    res.status(500).json({ error: "Registration failed" });
-  }
-});
-
-// ---------------------------------------------------------------------------
+  },
+);
 
 /**
  * @swagger
@@ -177,11 +343,8 @@ router.post("/register", registrationLimiter, async (req, res) => {
  *   post:
  *     tags:
  *       - Auth
- *     summary: Step 2 — Send OTP to verify phone
- *     description: >
- *       Sends a 6-digit OTP to a registered phone number.
- *       The user must already have an account (call /register first).
- *       OTP expires after 5 minutes. Rate-limited to one request per 60 seconds.
+ *     summary: Send OTP to verify phone
+ *     description: Sends a 6-digit OTP to the registered phone number for verification.
  *     security: []
  *     requestBody:
  *       required: true
@@ -194,16 +357,14 @@ router.post("/register", registrationLimiter, async (req, res) => {
  *             properties:
  *               phone:
  *                 type: string
- *                 example: "+2348012345678"
+ *                 example: "08012345678"
  *     responses:
  *       200:
  *         description: OTP sent successfully
  *       400:
- *         description: Invalid phone format or account not found
+ *         description: Invalid phone number or account not found
  *       429:
- *         description: Rate limit — wait 60 seconds before retrying
- *       500:
- *         description: Server error
+ *         description: Too many requests - wait 60 seconds
  */
 router.post("/request-otp", registrationLimiter, async (req, res) => {
   try {
@@ -219,54 +380,40 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
         .json({ error: "Invalid Nigerian phone number format" });
     }
 
-    // User must exist before we can send OTP
     const user = await User.findOne({ phone });
     if (!user) {
       return res.status(400).json({
-        error: "No account found for this number. Please register first.",
+        error:
+          "No account found for this number. Please contact your CHEW to register.",
       });
     }
 
     if (user.phoneVerified) {
-      return res
-        .status(400)
-        .json({ error: "This phone number is already verified" });
+      return res.status(400).json({ error: "Phone number already verified" });
     }
 
-    // Cryptographically secure 6-digit OTP
     const otp = crypto.randomInt(100000, 1000000).toString();
-    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
-    // Save OTP to user record
     await User.findByIdAndUpdate(user._id, { otp, otpExpiry });
 
-    // Best-effort Redis write for dedup/rate-limiting
     try {
       await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
     } catch (redisErr) {
-      console.warn(
-        `Redis OTP storage failed for ${phone}: ${redisErr.message}`,
-      );
+      console.warn(`Redis OTP storage failed: ${redisErr.message}`);
     }
 
     const result = await messagingService.sendSMS({
       to: phone,
       content: `Your MamaCheck verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`,
       type: "otp",
-      save: () => Promise.resolve(),
-      metadata: {},
-      retryCount: 0,
-      maxRetries: 3,
     });
 
     if (!result.success) {
-      // Roll back OTP so user can try again
       await User.findByIdAndUpdate(user._id, { otp: null, otpExpiry: null });
-      return res.status(500).json({
-        error: "Failed to send OTP. Please try again.",
-        twilioError:
-          process.env.NODE_ENV === "production" ? undefined : result.error,
-      });
+      return res
+        .status(500)
+        .json({ error: "Failed to send OTP. Please try again." });
     }
 
     res.json({
@@ -280,18 +427,14 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-
 /**
  * @swagger
  * /api/v1/auth/verify-otp:
  *   post:
  *     tags:
  *       - Auth
- *     summary: Step 3 — Verify OTP and activate account
- *     description: >
- *       Verifies the OTP sent to the user's phone and marks the account as active.
- *       After this step the account is fully verified and the user can log in.
+ *     summary: Verify OTP and activate account
+ *     description: Verifies the 6-digit OTP and marks the phone as verified.
  *     security: []
  *     requestBody:
  *       required: true
@@ -305,20 +448,17 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
  *             properties:
  *               phone:
  *                 type: string
- *                 example: "+2348012345678"
+ *                 example: "08012345678"
  *               otp:
  *                 type: string
- *                 description: 6-digit OTP code received via SMS
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: Phone verified — account is now active
+ *         description: Phone verified successfully
  *       400:
- *         description: Invalid OTP, expired OTP, or missing fields
+ *         description: Invalid or expired OTP
  *       404:
  *         description: Phone number not found
- *       500:
- *         description: Server error
  */
 router.post("/verify-otp", registrationLimiter, async (req, res) => {
   try {
@@ -334,9 +474,7 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
     }
 
     if (user.phoneVerified) {
-      return res
-        .status(400)
-        .json({ error: "This phone number is already verified" });
+      return res.status(400).json({ error: "Phone already verified" });
     }
 
     if (!user.otp || user.otp !== otp) {
@@ -345,11 +483,10 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
 
     if (new Date() > user.otpExpiry) {
       return res.status(400).json({
-        error: "OTP has expired. Please request a new one via /request-otp.",
+        error: "OTP expired. Please request a new one.",
       });
     }
 
-    // Mark account as verified and clear OTP
     await User.findByIdAndUpdate(user._id, {
       otp: null,
       otpExpiry: null,
@@ -361,10 +498,12 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
 
     res.json({
       success: true,
-      message: "Phone verified successfully. Your account is now active.",
+      message: "Phone verified successfully.",
       token,
       user: {
         id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
         name: user.name,
         phone: user.phone,
         role: user.role,
@@ -377,18 +516,177 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------
+// ADMIN REGISTRATION (Super-admin only - protected)
 
 /**
  * @swagger
- * /api/v1/auth/login:
+ * /api/v1/auth/register-admin:
  *   post:
  *     tags:
  *       - Auth
- *     summary: Login
- *     description: >
- *       Authenticate with phone and password. Returns a JWT token.
- *       Account must be phone-verified before login is allowed.
+ *     summary: Register a new Admin (Admin only)
+ *     description: Creates a new admin account. Only existing admins can create new admins.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - phone
+ *               - firstName
+ *               - lastName
+ *               - state
+ *               - lga
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "admin@example.com"
+ *               phone:
+ *                 type: string
+ *                 example: "08012345678"
+ *               firstName:
+ *                 type: string
+ *                 example: "Admin"
+ *               lastName:
+ *                 type: string
+ *                 example: "User"
+ *               state:
+ *                 type: string
+ *                 example: "Lagos"
+ *               lga:
+ *                 type: string
+ *                 example: "Ikeja"
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 example: "SecurePass123"
+ *     responses:
+ *       201:
+ *         description: Admin registered successfully
+ *       400:
+ *         description: Validation error
+ *       409:
+ *         description: Email or phone already registered
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ */
+router.post(
+  "/register-admin",
+  registrationLimiter,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { email, phone, firstName, lastName, state, lga, password } =
+        req.body;
+
+      // Validation
+      if (
+        !email ||
+        !phone ||
+        !firstName ||
+        !lastName ||
+        !state ||
+        !lga ||
+        !password
+      ) {
+        return res.status(400).json({
+          error:
+            "All fields required: email, phone, firstName, lastName, state, lga, password",
+        });
+      }
+
+      if (!EMAIL_REGEX.test(email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+
+      if (!PHONE_REGEX.test(phone)) {
+        return res
+          .status(400)
+          .json({ error: "Invalid Nigerian phone number format" });
+      }
+
+      if (password.length < 8) {
+        return res
+          .status(400)
+          .json({ error: "Password must be at least 8 characters" });
+      }
+
+      // Check existing by email OR phone
+      const existingUser = await User.findOne({
+        $or: [{ email: email.toLowerCase() }, { phone }],
+      });
+
+      if (existingUser) {
+        if (existingUser.email === email.toLowerCase()) {
+          return res.status(409).json({ error: "Email already registered" });
+        }
+        return res
+          .status(409)
+          .json({ error: "Phone number already registered" });
+      }
+
+      const hashedPassword = await hashPassword(password);
+      const fullName = `${firstName.trim()} ${lastName.trim()}`;
+
+      const newAdmin = await User.create({
+        email: email.toLowerCase(),
+        phone,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        name: fullName,
+        state,
+        lga,
+        password: hashedPassword,
+        role: "admin",
+        phoneVerified: true,
+        consent: { sms: true, dataProcessing: true, consentDate: new Date() },
+        optOut: { isOptedOut: false },
+      });
+
+      const token = signToken(newAdmin);
+
+      res.status(201).json({
+        success: true,
+        message: "Admin registered successfully",
+        token,
+        user: {
+          id: newAdmin._id,
+          firstName: newAdmin.firstName,
+          lastName: newAdmin.lastName,
+          name: newAdmin.name,
+          email: newAdmin.email,
+          phone: newAdmin.phone,
+          role: newAdmin.role,
+          state: newAdmin.state,
+          lga: newAdmin.lga,
+        },
+      });
+    } catch (error) {
+      console.error("Register admin error:", error);
+      res.status(500).json({ error: "Admin registration failed" });
+    }
+  },
+);
+
+// SEED SUPER ADMIN (Run once via CLI or special endpoint)
+
+/**
+ * @swagger
+ * /api/v1/auth/seed-super-admin:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Seed the first super admin (Development only)
+ *     description: Creates the first admin account. Only works in development or with ALLOW_SEEDING=true.
  *     security: []
  *     requestBody:
  *       required: true
@@ -397,35 +695,194 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
  *           schema:
  *             type: object
  *             required:
+ *               - email
  *               - phone
+ *               - firstName
+ *               - lastName
+ *               - state
+ *               - lga
  *               - password
  *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "superadmin@mamacheck.com"
  *               phone:
  *                 type: string
- *                 example: "+2348012345678"
+ *                 example: "08012345678"
+ *               firstName:
+ *                 type: string
+ *                 example: "Super"
+ *               lastName:
+ *                 type: string
+ *                 example: "Admin"
+ *               state:
+ *                 type: string
+ *                 example: "Lagos"
+ *               lga:
+ *                 type: string
+ *                 example: "Ikeja"
  *               password:
  *                 type: string
  *                 format: password
- *                 example: "SecurePassword123!"
+ *                 minLength: 8
+ *                 example: "SuperSecure123"
+ *     responses:
+ *       201:
+ *         description: Super Admin created successfully
+ *       400:
+ *         description: Admin already exists or validation error
+ *       403:
+ *         description: Seeding disabled in production
+ */
+
+router.post("/seed-super-admin", async (req, res) => {
+  // Only allow in development or via specific seed token
+  if (process.env.NODE_ENV === "production" && !process.env.ALLOW_SEEDING) {
+    return res.status(403).json({ error: "Seeding disabled in production" });
+  }
+
+  try {
+    const existingAdmin = await User.findOne({ role: "admin" });
+    if (existingAdmin) {
+      return res
+        .status(400)
+        .json({ error: "Admin already exists. Use /register-admin instead." });
+    }
+
+    const { email, phone, firstName, lastName, state, lga, password } =
+      req.body;
+
+    if (
+      !email ||
+      !phone ||
+      !firstName ||
+      !lastName ||
+      !state ||
+      !lga ||
+      !password
+    ) {
+      return res.status(400).json({ error: "All fields required" });
+    }
+
+    const hashedPassword = await hashPassword(password);
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+
+    const superAdmin = await User.create({
+      email: email.toLowerCase(),
+      phone,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      name: fullName,
+      state,
+      lga,
+      password: hashedPassword,
+      role: "admin",
+      phoneVerified: true,
+    });
+
+    const token = signToken(superAdmin);
+
+    res.status(201).json({
+      success: true,
+      message: "Super Admin created successfully",
+      token,
+      user: {
+        id: superAdmin._id,
+        email: superAdmin.email,
+        phone: superAdmin.phone,
+        role: superAdmin.role,
+      },
+    });
+  } catch (error) {
+    console.error("Seed super admin error:", error);
+    res.status(500).json({ error: "Failed to seed super admin" });
+  }
+});
+
+// LOGIN (Supports Email OR Phone)
+
+/**
+ * @swagger
+ * /api/v1/auth/login:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Login with email/phone and password
+ *     description: Authenticates a user and returns a JWT token. Works for all roles (patient, chew, admin).
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "user@example.com"
+ *               phone:
+ *                 type: string
+ *                 example: "08012345678"
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: "SecurePass123"
  *     responses:
  *       200:
  *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 token:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     firstName:
+ *                       type: string
+ *                     lastName:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     phone:
+ *                       type: string
+ *                     role:
+ *                       type: string
+ *                     phoneVerified:
+ *                       type: boolean
  *       400:
- *         description: Missing fields
+ *         description: Missing email/phone or password
  *       401:
- *         description: Invalid credentials, unverified account, or deactivated account
- *       500:
- *         description: Server error
+ *         description: Invalid credentials or unverified account
  */
 router.post("/login", generalLimiter, async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { email, phone, password } = req.body;
 
-    if (!phone || !password) {
-      return res.status(400).json({ error: "Phone and password are required" });
+    if ((!email && !phone) || !password) {
+      return res
+        .status(400)
+        .json({ error: "Email/Phone and password are required" });
     }
 
-    const user = await User.findOne({ phone });
+    // Build query for email OR phone
+    const identifier = email || phone;
+    const user = await User.findOne({
+      $or: [{ email: identifier.toLowerCase() }, { phone: identifier }],
+    });
+
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
@@ -434,7 +891,8 @@ router.post("/login", generalLimiter, async (req, res) => {
       return res.status(401).json({ error: "Account has been deactivated" });
     }
 
-    if (!user.phoneVerified) {
+    // Only patients need phone verification
+    if (user.role === "patient" && !user.phoneVerified) {
       return res.status(401).json({
         error:
           "Phone number not verified. Please complete verification via /request-otp.",
@@ -462,11 +920,18 @@ router.post("/login", generalLimiter, async (req, res) => {
       token,
       user: {
         id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
         name: user.name,
+        email: user.email,
         phone: user.phone,
         role: user.role,
         preferredLanguage: user.preferredLanguage,
         phoneVerified: user.phoneVerified,
+        state: user.state,
+        lga: user.lga,
+        residentialAddress: user.residentialAddress,
+        trustedContact: user.trustedContact,
         chewProfile: chewProfile
           ? {
               phcId: chewProfile.phcId,
@@ -483,8 +948,6 @@ router.post("/login", generalLimiter, async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-
 /**
  * @swagger
  * /api/v1/auth/me:
@@ -492,16 +955,14 @@ router.post("/login", generalLimiter, async (req, res) => {
  *     tags:
  *       - Auth
  *     summary: Get current user profile
- *     description: Returns the authenticated user's profile. Sensitive fields excluded.
+ *     description: Returns the authenticated user's profile information.
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Current user profile
+ *         description: User profile retrieved successfully
  *       401:
- *         description: Unauthorized
- *       500:
- *         description: Server error
+ *         description: Unauthorized - Invalid or missing token
  */
 router.get("/me", authMiddleware, async (req, res) => {
   const user = req.user.toObject();
@@ -513,19 +974,115 @@ router.get("/me", authMiddleware, async (req, res) => {
   res.json(user);
 });
 
-// ---------------------------------------------------------------------------
-
 /**
  * @swagger
- * /api/v1/auth/register-chew:
+ * /api/v1/auth/logout:
  *   post:
  *     tags:
  *       - Auth
- *     summary: Register a new CHEW
- *     description: >
- *       Creates a CHEW account and PHC profile. The PHC ID is always
- *       system-generated in the format PHC-{LGA}-{timestamp} and returned
- *       in the response. Should only be called by an admin or supervisor.
+ *     summary: Logout user
+ *     description: Revokes the current JWT token.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ *       500:
+ *         description: Logout failed
+ */
+router.post("/logout", authMiddleware, async (req, res) => {
+  try {
+    const token = req.token;
+    if (token) {
+      const decoded = jwt.decode(token);
+      if (decoded?.exp) {
+        const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+        if (ttl > 0) {
+          const redis = (await import("../config/redis.js")).default;
+          await redis.setex(`revoked:${token}`, ttl, "1");
+        }
+      }
+    }
+    res.json({ success: true, message: "Logged out successfully" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ error: "Logout failed" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/auth/refresh-token:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Refresh access token
+ *     description: Get a new access token using a refresh token.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 example: "eyJhbGciOiJIUzI1NiIs..."
+ *     responses:
+ *       200:
+ *         description: New access token generated
+ *       400:
+ *         description: Refresh token required
+ *       401:
+ *         description: Invalid or expired refresh token
+ */
+router.post("/refresh-token", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ error: "Refresh token required" });
+    }
+
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    if (decoded.type !== "refresh") {
+      return res.status(401).json({ error: "Invalid token type" });
+    }
+
+    const user = await User.findOne({
+      _id: decoded.userId,
+      "optOut.isOptedOut": { $ne: true },
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: "User not found or deactivated" });
+    }
+
+    const { accessToken, refreshToken: newRefreshToken } = (
+      await import("../middleware/auth.js")
+    ).generateTokens(user);
+
+    res.json({
+      success: true,
+      accessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (error) {
+    console.error("Refresh token error:", error);
+    res.status(401).json({ error: "Invalid or expired refresh token" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/auth/change-password:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Change password
+ *     description: Changes the authenticated user's password.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -535,151 +1092,198 @@ router.get("/me", authMiddleware, async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - phone
- *               - firstName
- *               - lastName
- *               - password
- *               - phcName
- *               - lga
+ *               - currentPassword
+ *               - newPassword
  *             properties:
- *               phone:
- *                 type: string
- *                 example: "+2348098765432"
- *               firstName:
- *                 type: string
- *                 example: "Chinedu"
- *               lastName:
- *                 type: string
- *                 example: "Okonkwo"
- *               password:
+ *               currentPassword:
  *                 type: string
  *                 format: password
- *                 minLength: 8
- *                 example: "SecurePassword123!"
- *               phcName:
+ *                 example: "OldPass123"
+ *               newPassword:
  *                 type: string
- *                 example: "Central PHC Kosofe"
- *               lga:
- *                 type: string
- *                 example: "Kosofe"
- *               state:
- *                 type: string
- *                 example: "Lagos"
+ *                 format: password
+ *                 minLength: 6
+ *                 example: "NewPass456"
  *     responses:
- *       201:
- *         description: CHEW registered — phcId is in the response
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 token:
- *                   type: string
- *                 user:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                     name:
- *                       type: string
- *                     phone:
- *                       type: string
- *                     role:
- *                       type: string
- *                       enum: ["chew"]
- *                     phcId:
- *                       type: string
- *                       example: "PHC-KOSOFE-1780620246123"
+ *       200:
+ *         description: Password changed successfully
  *       400:
- *         description: Validation error
- *       409:
- *         description: Phone number already registered
- *       500:
- *         description: Server error
+ *         description: Missing current or new password
+ *       401:
+ *         description: Current password is incorrect
  */
-router.post("/register-chew", registrationLimiter, async (req, res) => {
+router.post("/change-password", authMiddleware, async (req, res) => {
   try {
-    const { phone, firstName, lastName, password, phcName, lga, state } =
-      req.body;
+    const { currentPassword, newPassword } = req.body;
+    const user = req.user;
 
-    if (!phone || !firstName || !lastName || !password || !phcName || !lga) {
-      return res.status(400).json({
-        error:
-          "Phone, firstName, lastName, password, phcName, and lga are required",
+    if (!currentPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ error: "Current and new password required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ error: "New password must be at least 6 characters" });
+    }
+
+    const isValid = await comparePassword(currentPassword, user.password);
+    if (!isValid) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+
+    user.password = await hashPassword(newPassword);
+    user.passwordChangedAt = new Date();
+    await user.save();
+
+    res.json({ success: true, message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({ error: "Failed to change password" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/auth/forgot-password:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Request password reset
+ *     description: Sends a password reset token to the user's email or phone.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "user@example.com"
+ *               phone:
+ *                 type: string
+ *                 example: "08012345678"
+ *     responses:
+ *       200:
+ *         description: Reset instructions sent (if account exists)
+ *       400:
+ *         description: Email or phone number required
+ */
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+
+    if (!email && !phone) {
+      return res.status(400).json({ error: "Email or phone number required" });
+    }
+
+    const user = await findUserByIdentifier(email, phone);
+    if (!user) {
+      return sendResetResponse(res, {
+        success: true,
+        message: "If an account exists, you will receive reset instructions",
       });
     }
 
-    if (!PHONE_REGEX.test(phone)) {
-      return res
-        .status(400)
-        .json({ error: "Invalid Nigerian phone number format" });
+    const resetToken = await generateAndSaveResetToken(user);
+    const { emailSent, smsSent } = await sendResetNotifications(
+      user,
+      resetToken,
+    );
+
+    if (process.env.NODE_ENV !== "production") {
+      return sendResetResponse(res, {
+        success: true,
+        message: "Reset instructions sent",
+        resetToken,
+        emailSent,
+        smsSent,
+        expiresIn: 900,
+      });
     }
 
-    if (password.length < 8) {
-      return res
-        .status(400)
-        .json({ error: "Password must be at least 8 characters" });
-    }
-
-    // Check across ALL roles — phone must be globally unique
-    const existingUser = await User.findOne({ phone });
-    if (existingUser) {
-      return res
-        .status(409)
-        .json({ error: "This phone number is already registered" });
-    }
-
-    // System-generated PHC ID — never accepted from caller
-    const phcId = `PHC-${lga.toUpperCase().replace(/\s+/g, "-")}-${Date.now()}`;
-
-    const hashedPassword = await hashPassword(password);
-
-    const newChew = await User.create({
-      phone,
-      name: `${firstName.trim()} ${lastName.trim()}`,
-      password: hashedPassword,
-      role: "chew",
-      phoneVerified: true, // CHEWs are admin-registered, no OTP needed
-      consent: { sms: true, dataProcessing: true },
-      optOut: { isOptedOut: false },
-    });
-
-    await CHEWProfile.create({
-      userId: newChew._id,
-      phcId,
-      phcName,
-      lga,
-      state: state || "Unknown",
-      phone,
-      performanceMetrics: {
-        totalWomenManaged: 0,
-        totalVisitsCompleted: 0,
-        visitCompletionRate: 0,
-        averageResponseTime: 0,
-        redFlagsIdentified: 0,
-        referralsInitiated: 0,
-      },
-    });
-
-    const token = signToken(newChew);
-
-    res.status(201).json({
+    sendResetResponse(res, {
       success: true,
-      message: "CHEW registered successfully",
-      token,
-      user: {
-        id: newChew._id,
-        name: newChew.name,
-        phone: newChew.phone,
-        role: newChew.role,
-        phcId,
-      },
+      message: "If an account exists, you will receive reset instructions",
     });
   } catch (error) {
-    console.error("Register CHEW error:", error);
-    res.status(500).json({ error: "CHEW registration failed" });
+    console.error("Forgot password error:", error);
+    res.status(500).json({ error: "Failed to process request" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/auth/reset-password:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Reset password with token
+ *     description: Resets the user's password using a valid reset token.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - newPassword
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 example: "abc123def456..."
+ *               newPassword:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 6
+ *                 example: "NewSecurePass123"
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid or expired token, or validation error
+ */
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: "Token and new password required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ error: "Password must be at least 6 characters" });
+    }
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: "Invalid or expired reset token" });
+    }
+
+    user.password = await hashPassword(newPassword);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    user.passwordChangedAt = new Date();
+    await user.save();
+
+    res.json({ success: true, message: "Password reset successfully" });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ error: "Failed to reset password" });
   }
 });
 
