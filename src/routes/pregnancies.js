@@ -14,8 +14,8 @@ const router = express.Router();
  *   post:
  *     tags:
  *       - Pregnancies
- *     summary: Register a new pregnancy
- *     description: CHEW registers a new pregnant woman into the system
+ *     summary: Register a new pregnancy (creates patient + pregnancy)
+ *     description: CHEW registers a new pregnant woman into the system. Creates User, Pregnancy, and ANC tracking records.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -25,36 +25,65 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - name
+ *               - firstName
+ *               - lastName
  *               - phone
- *               - lmp
+ *               - password
+ *               - clinicName
  *             properties:
- *               name:
+ *               firstName:
  *                 type: string
- *                 example: "Jane Doe"
+ *                 example: "Jane"
+ *               lastName:
+ *                 type: string
+ *                 example: "Doe"
  *               phone:
  *                 type: string
  *                 example: "08012345678"
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 example: "SecurePass123"
+ *               residentialAddress:
+ *                 type: string
+ *                 example: "23 Main Street, Ikeja"
+ *               lga:
+ *                 type: string
+ *                 example: "Ikeja"
+ *               state:
+ *                 type: string
+ *                 example: "Lagos"
+ *               preferredLanguage:
+ *                 type: string
+ *                 enum: [en, pidgin, yo, ha, ig]
+ *                 default: en
  *               lmp:
  *                 type: string
  *                 format: date
  *                 example: "2025-09-18"
- *               preferredLanguage:
+ *               edd:
  *                 type: string
- *                 enum: [en, ha, yo, ig]
- *                 default: en
+ *                 format: date
+ *                 example: "2026-06-25"
  *               clinicName:
  *                 type: string
- *               address:
- *                 type: object
- *                 properties:
- *                   lga:
- *                     type: string
- *                   state:
- *                     type: string
+ *                 example: "Central PHC Ikeja"
+ *               trustedContactName:
+ *                 type: string
+ *                 example: "John Doe"
+ *               trustedContactPhone:
+ *                 type: string
+ *                 example: "08087654321"
+ *               trustedContactRelationship:
+ *                 type: string
+ *                 example: "Husband"
+ *               trustedContactLanguage:
+ *                 type: string
+ *                 enum: [en, pidgin, yo, ha, ig]
  *     responses:
  *       201:
- *         description: Pregnancy registered successfully
+ *         description: Patient and pregnancy registered successfully
  *       400:
  *         description: Validation error
  *       401:
