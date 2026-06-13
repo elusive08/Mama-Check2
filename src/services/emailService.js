@@ -1,12 +1,22 @@
 import { Resend } from "resend";
 import logger from "../utils/logger.js";
 
-// Initialize Resend with API key
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend with API key (only if key exists)
+let resend = null;
+try {
+  if (
+    process.env.RESEND_API_KEY &&
+    process.env.RESEND_API_KEY !== "undefined"
+  ) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+} catch (error) {
+  console.warn("Failed to initialize Resend:", error.message);
+}
 
-// Email templates
-const EMAIL_TEMPLATES = {
-  RESET_LINK: "password-reset",
+// Email template types
+const TEMPLATE_TYPES = {
+  RESET_LINK: "reset-link",
   WELCOME: "welcome",
   OTP_CODE: "otp-verification",
   CHEW_WELCOME: "chew-welcome",
@@ -16,7 +26,7 @@ const EMAIL_TEMPLATES = {
 class EmailService {
   constructor() {
     this.fromEmail = process.env.FROM_EMAIL || "noreply@mamacheck.com";
-    this.isEnabled = process.env.EMAIL_ENABLED === "true";
+    this.isEnabled = process.env.EMAIL_ENABLED === "true" && resend !== null;
     this.isProduction = process.env.NODE_ENV === "production";
   }
 
@@ -27,23 +37,14 @@ class EmailService {
    * @param {string} name - User's name
    */
   async sendPasswordResetEmail(to, resetToken, name) {
-    // Add debug logging
-    console.log(`[EMAIL DEBUG] Attempting to send reset email to: ${to}`);
-    console.log(`[EMAIL DEBUG] Email enabled: ${this.isEnabled}`);
-    console.log(
-      `[EMAIL DEBUG] RESEND_API_KEY exists: ${!!process.env.RESEND_API_KEY}`,
-    );
-    console.log(`[EMAIL DEBUG] From email: ${this.fromEmail}`);
-
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-    console.log(`[EMAIL DEBUG] Reset URL: ${resetUrl}`);
 
     const html = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Password Reset - MamaCheck</title>
+        <title>Reset Your MamaCheck Password</title>
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -67,8 +68,8 @@ class EmailService {
             <h1>MamaCheck</h1>
           </div>
           <div class="content">
-            <h2>Password Reset Request</h2>
-            <p>Hello ${name || "User"},</p>
+            <h2>Reset Your Password</h2>
+            <p>Hello ${this.escapeHtml(name) || "User"},</p>
             <p>We received a request to reset your password for your MamaCheck account.</p>
             <p>Click the button below to create a new password:</p>
             <p style="text-align: center;">
@@ -76,7 +77,7 @@ class EmailService {
             </p>
             <p>Or copy and paste this link into your browser:</p>
             <p><code>${resetUrl}</code></p>
-            <p>This link will expire in 1 hour.</p>
+            <p><strong>This link will expire in 15 minutes.</strong></p>
             <p>If you didn't request this, please ignore this email.</p>
             <hr>
             <p><strong>Security Tip:</strong> Never share this link with anyone.</p>
@@ -91,7 +92,7 @@ class EmailService {
     `;
 
     const text = `
-      Password Reset Request for MamaCheck
+      Reset Your MamaCheck Password
       
       Hello ${name || "User"},
       
@@ -100,7 +101,7 @@ class EmailService {
       Click this link to reset your password:
       ${resetUrl}
       
-      This link will expire in 1 hour.
+      This link will expire in 15 minutes.
       
       If you didn't request this, please ignore this email.
       
@@ -148,7 +149,7 @@ class EmailService {
           </div>
           <div class="content">
             <h2>Verify Your Email Address</h2>
-            <p>Hello ${name || "User"},</p>
+            <p>Hello ${this.escapeHtml(name) || "User"},</p>
             <p>Use the verification code below to complete your registration:</p>
             <div class="otp-code">${otp}</div>
             <p>This code will expire in <strong>5 minutes</strong>.</p>
@@ -236,7 +237,7 @@ class EmailService {
           </div>
           <div class="content">
             <h2>${content.title}</h2>
-            <p>Hello ${name || "User"},</p>
+            <p>Hello ${this.escapeHtml(name) || "User"},</p>
             <p>${content.message}</p>
             <p style="text-align: center;">
               <a href="${process.env.FRONTEND_URL}/login" class="button">Login to Your Account</a>
@@ -280,20 +281,16 @@ class EmailService {
    * @param {string} text - Plain text content (optional)
    */
   async sendEmail(to, subject, html, text = null) {
-    // Skip if email is disabled
-    if (!this.isEnabled) {
-      logger.info(`Email disabled. Would send to ${to}: ${subject}`);
+    // Skip if email is disabled or no Resend client
+    if (!this.isEnabled || !resend) {
+      logger.info(
+        `Email disabled (mock mode). Would send to ${to}: ${subject}`,
+      );
       return {
         success: true,
         mock: true,
         message: "Email disabled (mock mode)",
       };
-    }
-
-    // Skip if no API key in production
-    if (this.isProduction && !process.env.RESEND_API_KEY) {
-      logger.error("RESEND_API_KEY not configured in production");
-      return { success: false, error: "Email service not configured" };
     }
 
     try {
@@ -332,15 +329,29 @@ class EmailService {
   }
 
   /**
+   * Escape HTML special characters to prevent XSS
+   * @param {string} str - String to escape
+   * @returns {string} Escaped string
+   */
+  escapeHtml(str) {
+    if (!str) return "";
+    return str
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  /**
    * Check if email service is configured and working
    */
   async healthCheck() {
-    if (!process.env.RESEND_API_KEY) {
+    if (!resend) {
       return { configured: false, error: "RESEND_API_KEY not set" };
     }
 
     try {
-      // Simple test - try to get domain info (doesn't send email)
       const domains = await resend.domains.list();
       return {
         configured: true,

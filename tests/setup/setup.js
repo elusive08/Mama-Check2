@@ -42,20 +42,12 @@ afterAll(async () => {
   console.log("Disconnected from MongoDB");
 });
 
-// Before each test - clear collections
-beforeEach(async () => {
-  if (mongoose.connection.readyState === 1) {
-    const collections = mongoose.connection.collections;
-    for (const key in collections) {
-      try {
-        await collections[key].deleteMany({});
-      } catch (err) {
-        // Collection might not exist yet
-        console.log(`Could not clear ${key}:`, err.message);
-      }
-    }
-  }
-});
+// Global beforeEach: intentionally empty.
+// Unit tests clean up their own mocks/state inline.
+// Integration tests manage their own DB cleanup in their local beforeEach/afterEach
+// so they can persist setup data (admin, CHEW) across the test lifecycle.
+// DO NOT wipe collections here — it would delete admin/CHEW users created in
+// integration test beforeAll blocks before the test's own beforeEach runs.
 
 // Error handlers
 mongoose.connection.on("error", (err) => {

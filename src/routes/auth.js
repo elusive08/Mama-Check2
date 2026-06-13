@@ -19,10 +19,16 @@ import mongoose from "mongoose";
 const router = express.Router();
 
 // Helpers
+// Must match authController.generateTokens exactly:
+//   - same secret (process.env.JWT_SECRET)
+//   - same payload shape ({ userId, role, phone })
+// so tokens from this router pass authMiddleware verification.
 const signToken = (user) =>
-  jwt.sign({ userId: user._id, role: user.role }, config.jwt.secret, {
-    expiresIn: config.jwt.expiresIn,
-  });
+  jwt.sign(
+    { userId: user._id, role: user.role, phone: user.phone },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
+  );
 
 const PHONE_REGEX = /^(\+?234|0)[789]\d{9}$/;
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
@@ -47,7 +53,6 @@ const requireAdmin = async (req, res, next) => {
   }
 };
 
-// Helper functions for forgot-password
 // Helper functions for forgot-password
 async function findUserByIdentifier(email, phone) {
   const query = {};
@@ -128,6 +133,18 @@ async function sendResetNotifications(user, resetToken) {
 function sendResetResponse(res, data) {
   return res.status(200).json(data);
 }
+
+// Helper function for alphanumeric OTP generation (cryptographically secure)
+const generateAlphanumericOTP = (length = 6) => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let otp = "";
+  const randomBytes = crypto.randomBytes(length);
+  for (let i = 0; i < length; i++) {
+    const index = randomBytes[i] % chars.length;
+    otp += chars[index];
+  }
+  return otp;
+};
 
 // CHEW REGISTRATION (Admin only - creates User + CHEWProfile)
 /**
@@ -343,8 +360,8 @@ router.post(
  *   post:
  *     tags:
  *       - Auth
- *     summary: Send OTP to verify phone
- *     description: Sends a 6-digit OTP to the registered phone number for verification.
+ *     summary: Send verification code to verify phone
+ *     description: Sends a 6-digit alphanumeric verification code to the registered phone number.
  *     security: []
  *     requestBody:
  *       required: true
@@ -360,7 +377,7 @@ router.post(
  *                 example: "08012345678"
  *     responses:
  *       200:
- *         description: OTP sent successfully
+ *         description: Verification code sent successfully
  *       400:
  *         description: Invalid phone number or account not found
  *       429:
@@ -392,7 +409,8 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
       return res.status(400).json({ error: "Phone number already verified" });
     }
 
-    const otp = crypto.randomInt(100000, 1000000).toString();
+    // Generate alphanumeric OTP (e.g., "4r7t8w")
+    const otp = generateAlphanumericOTP(6);
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
     await User.findByIdAndUpdate(user._id, { otp, otpExpiry });
@@ -413,17 +431,17 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
       await User.findByIdAndUpdate(user._id, { otp: null, otpExpiry: null });
       return res
         .status(500)
-        .json({ error: "Failed to send OTP. Please try again." });
+        .json({ error: "Failed to send verification code. Please try again." });
     }
 
     res.json({
       success: true,
-      message: "OTP sent successfully",
+      message: "Verification code sent successfully",
       expiresIn: 300,
     });
   } catch (error) {
     console.error("Request OTP error:", error);
-    res.status(500).json({ error: "Failed to send OTP" });
+    res.status(500).json({ error: "Failed to send verification code" });
   }
 });
 
@@ -434,7 +452,7 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
  *     tags:
  *       - Auth
  *     summary: Verify OTP and activate account
- *     description: Verifies the 6-digit OTP and marks the phone as verified.
+ *     description: Verifies the 6-digit alphanumeric verification code and marks the phone as verified.
  *     security: []
  *     requestBody:
  *       required: true
@@ -451,12 +469,12 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
  *                 example: "08012345678"
  *               otp:
  *                 type: string
- *                 example: "123456"
+ *                 example: "4r7t8w"
  *     responses:
  *       200:
  *         description: Phone verified successfully
  *       400:
- *         description: Invalid or expired OTP
+ *         description: Invalid or expired verification code
  *       404:
  *         description: Phone number not found
  */
@@ -465,7 +483,50 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
     const { phone, otp } = req.body;
 
     if (!phone || !otp) {
-      return res.status(400).json({ error: "Phone and OTP are required" });
+      return res
+        .status(400)
+        .json({ error: "Phone and verification code are required" });
+    }
+
+    // Test environment bypass
+    const isTestEnv = process.env.NODE_ENV === "test";
+    const bypassOtp =
+      process.env.BYPASS_OTP_FOR_TESTING === "true" && isTestEnv;
+
+    if (bypassOtp && otp.toString().length >= 4) {
+      logger.info(`Test mode: OTP bypass for ${phone}`);
+
+      let user = await User.findOne({ phone });
+      if (!user) {
+        user = new User({
+          phone,
+          role: "patient",
+          phoneVerified: true,
+          phoneVerifiedAt: new Date(),
+          optOut: { isOptedOut: false },
+        });
+        await user.save();
+      } else if (!user.phoneVerified) {
+        user.phoneVerified = true;
+        user.phoneVerifiedAt = new Date();
+        await user.save();
+      }
+
+      const token = signToken(user);
+      return res.status(200).json({
+        success: true,
+        token,
+        message: "Verification successful (test mode)",
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          phoneVerified: true,
+        },
+      });
     }
 
     const user = await User.findOne({ phone });
@@ -477,22 +538,71 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
       return res.status(400).json({ error: "Phone already verified" });
     }
 
-    if (!user.otp || user.otp !== otp) {
-      return res.status(400).json({ error: "Invalid OTP" });
-    }
-
-    if (new Date() > user.otpExpiry) {
+    // Check if OTP exists
+    if (!user.otp) {
       return res.status(400).json({
-        error: "OTP expired. Please request a new one.",
+        error: "No verification code found. Please request a new one.",
       });
     }
 
+    // Check expiration
+    if (new Date() > user.otpExpiry) {
+      // Clear expired OTP
+      await User.findByIdAndUpdate(user._id, {
+        otp: null,
+        otpExpiry: null,
+      });
+      await otpStore.delete(phone);
+
+      return res.status(400).json({
+        error: "Verification code expired. Please request a new one.",
+      });
+    }
+
+    // Track failed attempts from Redis
+    let storedOTP = await otpStore.get(phone);
+    if (!storedOTP) {
+      // Initialize attempt tracking if not exists
+      storedOTP = { otp: user.otp, attempts: 0, verified: false };
+      await otpStore.set(phone, storedOTP, 300);
+    }
+
+    // Check max attempts
+    if (storedOTP.attempts >= 3) {
+      await User.findByIdAndUpdate(user._id, {
+        otp: null,
+        otpExpiry: null,
+      });
+      await otpStore.delete(phone);
+
+      return res.status(400).json({
+        error:
+          "Too many failed attempts. Please request a new verification code.",
+      });
+    }
+
+    // Case-insensitive comparison for alphanumeric OTP
+    if (!user.otp || user.otp.toLowerCase() !== otp.toLowerCase()) {
+      // Increment failed attempts
+      storedOTP.attempts = (storedOTP.attempts || 0) + 1;
+      await otpStore.set(phone, storedOTP, 300);
+
+      const remainingAttempts = 3 - storedOTP.attempts;
+      return res.status(400).json({
+        error: `Invalid verification code. ${remainingAttempts} attempt(s) remaining.`,
+      });
+    }
+
+    // Success - clear OTP and mark verified
     await User.findByIdAndUpdate(user._id, {
       otp: null,
       otpExpiry: null,
       phoneVerified: true,
       phoneVerifiedAt: new Date(),
     });
+
+    // Clear OTP from Redis
+    await otpStore.delete(phone);
 
     const token = signToken(user);
 
@@ -507,12 +617,13 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
         name: user.name,
         phone: user.phone,
         role: user.role,
+        preferredLanguage: user.preferredLanguage,
         phoneVerified: true,
       },
     });
   } catch (error) {
     console.error("Verify OTP error:", error);
-    res.status(500).json({ error: "OTP verification failed" });
+    res.status(500).json({ error: "Verification failed" });
   }
 });
 
