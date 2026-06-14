@@ -876,6 +876,521 @@ class DashboardController {
     };
     return symptoms[symptomCode] || "Unknown";
   }
+
+  /**
+   * Get triage distribution for dashboard
+   */
+  async getTriageDistribution(req, res) {
+    try {
+      const { chewId, lga, state } = req.query;
+      let query = {};
+
+      if (chewId) {
+        query.chewId = chewId;
+      } else if (lga || state) {
+        const chews = await CHEWProfile.find({
+          ...(lga && { lga }),
+          ...(state && { state }),
+        });
+        query.chewId = { $in: chews.map((c) => c.userId) };
+      }
+
+      // Get active pregnancies with their latest danger reports
+      const pregnancies = await Pregnancy.find({
+        ...query,
+        status: "active",
+      }).populate("womanId");
+
+      // Get latest triage for each pregnancy
+      const triageCounts = {
+        GREEN: 0,
+        YELLOW: 0,
+        RED: 0,
+      };
+
+      for (const pregnancy of pregnancies) {
+        const latestReport = await DangerReport.findOne({
+          pregnancyId: pregnancy._id,
+        }).sort({ timestamp: -1 });
+
+        const triage = latestReport?.triageOutcome || "GREEN";
+        triageCounts[triage] = (triageCounts[triage] || 0) + 1;
+      }
+
+      const total = pregnancies.length;
+
+      res.json({
+        success: true,
+        triageDistribution: {
+          GREEN: {
+            count: triageCounts.GREEN,
+            percentage: total
+              ? ((triageCounts.GREEN / total) * 100).toFixed(1)
+              : 0,
+          },
+          YELLOW: {
+            count: triageCounts.YELLOW,
+            percentage: total
+              ? ((triageCounts.YELLOW / total) * 100).toFixed(1)
+              : 0,
+          },
+          RED: {
+            count: triageCounts.RED,
+            percentage: total
+              ? ((triageCounts.RED / total) * 100).toFixed(1)
+              : 0,
+          },
+        },
+        totalPatients: total,
+      });
+    } catch (error) {
+      logger.error("Get triage distribution error:", error);
+      res.status(500).json({ error: "Failed to get triage distribution" });
+    }
+  }
+
+  /**
+   * Get patients grouped by location
+   */
+  async getPatientsByLocation(req, res) {
+    try {
+      const { chewId, lga, state } = req.query;
+      let query = {};
+
+      if (chewId) {
+        query.chewId = chewId;
+      } else if (lga || state) {
+        const chews = await CHEWProfile.find({
+          ...(lga && { lga }),
+          ...(state && { state }),
+        });
+        query.chewId = { $in: chews.map((c) => c.userId) };
+      }
+
+      const pregnancies = await Pregnancy.find(query).populate(
+        "womanId",
+        "address state lga city",
+      );
+
+      // Group by location
+      const locationMap = new Map();
+
+      for (const pregnancy of pregnancies) {
+        const location =
+          pregnancy.womanId?.city ||
+          pregnancy.womanId?.lga ||
+          pregnancy.womanId?.state ||
+          "Unknown";
+
+        locationMap.set(location, (locationMap.get(location) || 0) + 1);
+      }
+
+      const locations = Array.from(locationMap.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count);
+
+      res.json({
+        success: true,
+        locations,
+        totalLocations: locations.length,
+      });
+    } catch (error) {
+      logger.error("Get patients by location error:", error);
+      res.status(500).json({ error: "Failed to get location distribution" });
+    }
+  }
+
+  /**
+   * Get gestational week distribution histogram
+   */
+  async getGestationalWeekDistribution(req, res) {
+    try {
+      const { chewId, lga, state } = req.query;
+      let query = {};
+
+      if (chewId) {
+        query.chewId = chewId;
+      } else if (lga || state) {
+        const chews = await CHEWProfile.find({
+          ...(lga && { lga }),
+          ...(state && { state }),
+        });
+        query.chewId = { $in: chews.map((c) => c.userId) };
+      }
+
+      const pregnancies = await Pregnancy.find({ ...query, status: "active" });
+
+      // Define week ranges
+      const weekRanges = [
+        { label: "0-12", min: 0, max: 12 },
+        { label: "13-20", min: 13, max: 20 },
+        { label: "21-28", min: 21, max: 28 },
+        { label: "29-36", min: 29, max: 36 },
+        { label: "37-40", min: 37, max: 40 },
+        { label: "40+", min: 41, max: 99 },
+      ];
+
+      const distribution = weekRanges.map((range) => ({
+        range: range.label,
+        count: pregnancies.filter(
+          (p) =>
+            p.gestationalWeek >= range.min && p.gestationalWeek <= range.max,
+        ).length,
+      }));
+
+      res.json({
+        success: true,
+        distribution,
+        totalPatients: pregnancies.length,
+        averageWeek: pregnancies.length
+          ? (
+              pregnancies.reduce((sum, p) => sum + p.gestationalWeek, 0) /
+              pregnancies.length
+            ).toFixed(1)
+          : 0,
+      });
+    } catch (error) {
+      logger.error("Get gestational distribution error:", error);
+      res.status(500).json({ error: "Failed to get gestational distribution" });
+    }
+  }
+
+  /**
+   * Get missed visits broken down by triage level
+   */
+  async getMissedVisitsByTriage(req, res) {
+    try {
+      const { chewId, lga, state } = req.query;
+      let query = {};
+
+      if (chewId) {
+        query.chewId = chewId;
+      } else if (lga || state) {
+        const chews = await CHEWProfile.find({
+          ...(lga && { lga }),
+          ...(state && { state }),
+        });
+        query.chewId = { $in: chews.map((c) => c.userId) };
+      }
+
+      const pregnancies = await Pregnancy.find({ ...query, status: "active" });
+
+      // Get triage for each pregnancy
+      const triageMap = new Map();
+
+      for (const pregnancy of pregnancies) {
+        const latestReport = await DangerReport.findOne({
+          pregnancyId: pregnancy._id,
+        }).sort({ timestamp: -1 });
+
+        const triage = latestReport?.triageOutcome || "GREEN";
+
+        // Get ANC schedule
+        const anc = await ANCPregnancy.findOne({ pregnancyId: pregnancy._id });
+        const missedVisits =
+          anc?.fmohSchedule?.filter(
+            (v) => !v.attended && v.scheduledDate < new Date(),
+          ).length || 0;
+
+        if (!triageMap.has(triage)) {
+          triageMap.set(triage, { missedVisits: 0, patients: 0 });
+        }
+
+        const stats = triageMap.get(triage);
+        stats.missedVisits += missedVisits;
+        stats.patients++;
+      }
+
+      const missedVisitsData = Array.from(triageMap.entries()).map(
+        ([triage, data]) => ({
+          triage,
+          missedVisits: data.missedVisits,
+          patients: data.patients,
+          avgMissedPerPatient: (data.missedVisits / data.patients).toFixed(1),
+        }),
+      );
+
+      res.json({
+        success: true,
+        missedVisits: missedVisitsData,
+        totalMissedVisits: missedVisitsData.reduce(
+          (sum, d) => sum + d.missedVisits,
+          0,
+        ),
+      });
+    } catch (error) {
+      logger.error("Get missed visits by triage error:", error);
+      res.status(500).json({ error: "Failed to get missed visits data" });
+    }
+  }
+
+  /**
+   * Get patient count ranges (for histogram visualization)
+   */
+  async getPatientCountRanges(req, res) {
+    try {
+      const { groupBy = "chew", lga, state } = req.query;
+
+      let counts = [];
+
+      if (groupBy === "chew") {
+        // Get counts per CHEW
+        const chews = await CHEWProfile.find({
+          ...(lga && { lga }),
+          ...(state && { state }),
+        });
+
+        for (const chew of chews) {
+          const count = await Pregnancy.countDocuments({ chewId: chew.userId });
+          counts.push(count);
+        }
+      } else if (groupBy === "lga") {
+        // Get counts per LGA
+        const lgas = await CHEWProfile.distinct("lga", {
+          ...(state && { state }),
+        });
+
+        for (const lgaName of lgas) {
+          const chewsInLga = await CHEWProfile.find({ lga: lgaName });
+          const chewIds = chewsInLga.map((c) => c.userId);
+          const count = await Pregnancy.countDocuments({
+            chewId: { $in: chewIds },
+          });
+          counts.push(count);
+        }
+      }
+
+      // Create range buckets
+      const ranges = [
+        { label: "0-10", min: 0, max: 10, count: 0 },
+        { label: "11-25", min: 11, max: 25, count: 0 },
+        { label: "26-50", min: 26, max: 50, count: 0 },
+        { label: "51-75", min: 51, max: 75, count: 0 },
+        { label: "76-100", min: 76, max: 100, count: 0 },
+        { label: "100+", min: 101, max: Infinity, count: 0 },
+      ];
+
+      for (const count of counts) {
+        const range = ranges.find((r) => count >= r.min && count <= r.max);
+        if (range) range.count++;
+      }
+
+      res.json({
+        success: true,
+        groupBy,
+        ranges,
+        totalGroups: counts.length,
+        averagePatients: counts.length
+          ? (counts.reduce((a, b) => a + b, 0) / counts.length).toFixed(1)
+          : 0,
+      });
+    } catch (error) {
+      logger.error("Get patient count ranges error:", error);
+      res.status(500).json({ error: "Failed to get patient count ranges" });
+    }
+  }
+
+  /**
+   * Combined dashboard for frontend (one call to get all data)
+   */
+  async getFullDashboard(req, res) {
+    try {
+      const { chewId, lga, state, role = "chew" } = req.query;
+
+      // Set up query params for all helper methods
+      const queryParams = { chewId, lga, state };
+
+      // Parallel execution of all dashboard queries
+      const [
+        triageDistribution,
+        locationData,
+        gestationalData,
+        missedVisitsData,
+        patientRanges,
+        kpis,
+      ] = await Promise.all([
+        this.getTriageDistributionData(queryParams),
+        this.getLocationData(queryParams),
+        this.getGestationalData(queryParams),
+        this.getMissedVisitsData(queryParams),
+        this.getPatientRangesData({
+          ...queryParams,
+          groupBy: role === "supervisor" ? "lga" : "chew",
+        }),
+        this.getKPIData(queryParams),
+      ]);
+
+      res.json({
+        success: true,
+        dashboard: {
+          kpis,
+          triageDistribution,
+          patientsByLocation: locationData,
+          gestationalWeekDistribution: gestationalData,
+          missedVisitsByTriage: missedVisitsData,
+          patientCountDistribution: patientRanges,
+          lastUpdated: new Date(),
+        },
+      });
+    } catch (error) {
+      logger.error("Get full dashboard error:", error);
+      res.status(500).json({ error: "Failed to get dashboard data" });
+    }
+  }
+
+  // Helper methods for combined dashboard
+  async getTriageDistributionData(params) {
+    // Implementation similar to getTriageDistribution but returns data only
+    let query = {};
+    if (params.chewId) query.chewId = params.chewId;
+
+    const pregnancies = await Pregnancy.find({ ...query, status: "active" });
+    const triageCounts = { GREEN: 0, YELLOW: 0, RED: 0 };
+
+    for (const pregnancy of pregnancies) {
+      const latestReport = await DangerReport.findOne({
+        pregnancyId: pregnancy._id,
+      }).sort({ timestamp: -1 });
+      const triage = latestReport?.triageOutcome || "GREEN";
+      triageCounts[triage]++;
+    }
+
+    const total = pregnancies.length;
+    return {
+      GREEN: {
+        percentage: total ? ((triageCounts.GREEN / total) * 100).toFixed(1) : 0,
+      },
+      YELLOW: {
+        percentage: total
+          ? ((triageCounts.YELLOW / total) * 100).toFixed(1)
+          : 0,
+      },
+      RED: {
+        percentage: total ? ((triageCounts.RED / total) * 100).toFixed(1) : 0,
+      },
+    };
+  }
+
+  async getLocationData(params) {
+    let query = {};
+    if (params.chewId) query.chewId = params.chewId;
+
+    const pregnancies = await Pregnancy.find(query).populate(
+      "womanId",
+      "city lga state",
+    );
+    const locationMap = new Map();
+
+    for (const pregnancy of pregnancies) {
+      const location =
+        pregnancy.womanId?.city || pregnancy.womanId?.lga || "Unknown";
+      locationMap.set(location, (locationMap.get(location) || 0) + 1);
+    }
+
+    return Array.from(locationMap.entries()).map(([name, count]) => ({
+      name,
+      count,
+    }));
+  }
+
+  async getGestationalData(params) {
+    let query = {};
+    if (params.chewId) query.chewId = params.chewId;
+
+    const pregnancies = await Pregnancy.find({ ...query, status: "active" });
+    const weekRanges = [
+      { range: "0-12", min: 0, max: 12 },
+      { range: "13-20", min: 13, max: 20 },
+      { range: "21-28", min: 21, max: 28 },
+      { range: "29-36", min: 29, max: 36 },
+      { range: "37-40", min: 37, max: 40 },
+      { range: "40+", min: 41, max: 99 },
+    ];
+
+    return weekRanges.map((range) => ({
+      range: range.range,
+      count: pregnancies.filter(
+        (p) => p.gestationalWeek >= range.min && p.gestationalWeek <= range.max,
+      ).length,
+    }));
+  }
+
+  async getMissedVisitsData(params) {
+    let query = {};
+    if (params.chewId) query.chewId = params.chewId;
+
+    const pregnancies = await Pregnancy.find({ ...query, status: "active" });
+    const triageMap = new Map();
+
+    for (const pregnancy of pregnancies) {
+      const latestReport = await DangerReport.findOne({
+        pregnancyId: pregnancy._id,
+      }).sort({ timestamp: -1 });
+      const triage = latestReport?.triageOutcome || "GREEN";
+
+      const anc = await ANCPregnancy.findOne({ pregnancyId: pregnancy._id });
+      const missedVisits =
+        anc?.fmohSchedule?.filter(
+          (v) => !v.attended && v.scheduledDate < new Date(),
+        ).length || 0;
+
+      triageMap.set(triage, (triageMap.get(triage) || 0) + missedVisits);
+    }
+
+    return Array.from(triageMap.entries()).map(([triage, missedVisits]) => ({
+      triage,
+      missedVisits,
+    }));
+  }
+
+  async getPatientRangesData(params) {
+    const { groupBy = "chew", lga, state } = params;
+    let counts = [];
+
+    if (groupBy === "chew") {
+      const chews = await CHEWProfile.find({
+        ...(lga && { lga }),
+        ...(state && { state }),
+      });
+      for (const chew of chews) {
+        const count = await Pregnancy.countDocuments({ chewId: chew.userId });
+        counts.push(count);
+      }
+    }
+
+    const ranges = [
+      { label: "0-10", min: 0, max: 10, count: 0 },
+      { label: "11-25", min: 11, max: 25, count: 0 },
+      { label: "26-50", min: 26, max: 50, count: 0 },
+      { label: "51-75", min: 51, max: 75, count: 0 },
+      { label: "76-100", min: 76, max: 100, count: 0 },
+      { label: "100+", min: 101, max: Infinity, count: 0 },
+    ];
+
+    for (const count of counts) {
+      const range = ranges.find((r) => count >= r.min && count <= r.max);
+      if (range) range.count++;
+    }
+
+    return ranges;
+  }
+
+  async getKPIData(params) {
+    let query = {};
+    if (params.chewId) query.chewId = params.chewId;
+
+    const totalWomen = await Pregnancy.countDocuments(query);
+    const activePregnancies = await Pregnancy.countDocuments({
+      ...query,
+      status: "active",
+    });
+    const highRiskWomen = await Pregnancy.countDocuments({
+      ...query,
+      riskFactors: { $exists: true, $ne: [] },
+    });
+
+    return { totalWomen, activePregnancies, highRiskWomen };
+  }
 }
 
 export default new DashboardController();

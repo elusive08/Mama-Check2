@@ -228,7 +228,12 @@ class PregnancyController {
    * Send OTP for phone verification
    */
   async sendWelcomeOTP(user) {
-    const otp = crypto.randomInt(100000, 1000000).toString();
+    // Alphanumeric OTP — same format as /auth/request-otp
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const randomBytes = crypto.randomBytes(6);
+    const otp = Array.from(randomBytes)
+      .map((b) => chars[b % chars.length])
+      .join("");
 
     await User.findByIdAndUpdate(user._id, {
       otp,
@@ -237,7 +242,7 @@ class PregnancyController {
 
     await MessagingService.sendSMS({
       to: user.phone,
-      content: `Welcome to MamaCheck! Your verification code is: ${otp}. Valid for 5 minutes.`,
+      content: `Welcome to MamaCheck! You have been registered for maternal health monitoring. Your verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`,
       type: "otp",
     });
   }

@@ -9,7 +9,6 @@ import {
 import express from "express";
 import { comparePassword, hashPassword } from "../utils/passwordUtils.js";
 import messagingService from "../services/messagingService.js";
-import config from "../config/index.js";
 import emailService from "../services/emailService.js";
 import logger from "../utils/logger.js";
 import otpStore from "../utils/otpStore.js";
@@ -406,7 +405,7 @@ router.post("/request-otp", registrationLimiter, async (req, res) => {
     }
 
     if (user.phoneVerified) {
-      return res.status(400).json({ error: "Phone number already verified" });
+      return res.status(423).json({ error: "Phone number already verified" });
     }
 
     // Generate alphanumeric OTP (e.g., "4r7t8w")
@@ -535,7 +534,7 @@ router.post("/verify-otp", registrationLimiter, async (req, res) => {
     }
 
     if (user.phoneVerified) {
-      return res.status(400).json({ error: "Phone already verified" });
+      return res.status(423).json({ error: "Phone already verified" });
     }
 
     // Check if OTP exists
