@@ -185,10 +185,12 @@ app.get("/health", async (req, res) => {
   const dbConnected = mongoose.connection.readyState === 1;
   const redisHealth = redisClient.getHealth();
   const redisConnected = redisHealth.connected;
-  const isHealthy = dbConnected && redisConnected;
+
+  // Database is critical; Redis is important but the app can function in degraded mode
+  const isHealthy = dbConnected;
 
   return res.status(isHealthy ? 200 : 503).json({
-    status: isHealthy ? "healthy" : "degraded",
+    status: isHealthy ? (redisConnected ? "healthy" : "degraded") : "unhealthy",
     timestamp: new Date().toISOString(),
     uptime: Math.floor(process.uptime()),
     environment: process.env.NODE_ENV || "development",

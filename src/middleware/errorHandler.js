@@ -1,7 +1,7 @@
 import SystemEvent from "../models/SystemEvent.js";
 import logger from "../utils/logger.js";
 
-const errorHandler = (err, req, res) => {
+const errorHandler = (err, req, res, next) => {
   logger.error("Error:", {
     requestId: req.id,
     message: err.message,

@@ -1,5 +1,6 @@
 import Pregnancy from "../models/Pregnancy.js";
 import ANCPregnancy from "../models/ANCPregnancy.js";
+import CHEWProfile from "../models/CHEWProfile.js";
 import User from "../models/User.js";
 import DangerReport from "../models/DangerReport.js";
 import ANCVisitLog from "../models/ANCVisitLog.js";
@@ -250,16 +251,23 @@ class PregnancyController {
   /**
    * Create pregnancy record
    */
-  async createPregnancyRecord(user, data, chewId) {
+  async createPregnancyRecord(user, data, chewUserId) {
     const gestationalAge = this.calculateGestationalAge(data.lmp, data.edd);
+
+    // Fetch CHEWProfile to get phcId
+    const chewProfile = await CHEWProfile.findOne({ userId: chewUserId });
+    if (!chewProfile && chewUserId) {
+      logger.warn(`No CHEWProfile found for user ${chewUserId}`);
+    }
 
     const pregnancy = new Pregnancy({
       womanId: user._id,
-      chewId: chewId || null,
+      chewId: chewProfile?._id || null,
+      phcId: chewProfile?.phcId || data.phcId || "UNKNOWN",
       lmp: gestationalAge.lmp,
       edd: gestationalAge.edd,
       gestationalWeek: gestationalAge.weeks,
-      clinicName: data.clinicName,
+      clinicName: data.clinicName || chewProfile?.phcName,
       registrationDate: new Date(),
       status: "active",
       lastCheckin: new Date(),
