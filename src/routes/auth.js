@@ -165,17 +165,16 @@ const generateAlphanumericOTP = (length = 6) => {
   return otp;
 };
 
-// CHEW REGISTRATION (Admin only - creates User + CHEWProfile)
+// CHEW REGISTRATION (Self-registration - creates User + CHEWProfile)
 /**
  * @swagger
  * /api/v1/auth/register-chew:
  *   post:
  *     tags:
  *       - Auth
- *     summary: Register a new CHEW (Admin only)
- *     description: Creates a CHEW user account and CHEWProfile in one atomic transaction.
- *     security:
- *       - bearerAuth: []
+ *     summary: Register a new CHEW
+ *     description: Creates a CHEW user account and CHEWProfile in one atomic transaction. Self-registration enabled.
+ *     security: []
  *     requestBody:
  *       required: true
  *       content:
@@ -225,15 +224,10 @@ const generateAlphanumericOTP = (length = 6) => {
  *         description: Validation error
  *       409:
  *         description: Email or phone already registered
- *       401:
- *         description: Authentication required
- *       403:
- *         description: Admin access required
  */
 router.post(
   "/register-chew",
   registrationLimiter,
-  requireAdmin,
   async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
