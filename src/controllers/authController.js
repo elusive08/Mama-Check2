@@ -5,6 +5,7 @@ import logger from "../utils/logger.js";
 import otpStore from "../utils/otpStore.js";
 import crypto from "node:crypto";
 import { hashPassword, comparePassword } from "../utils/passwordUtils.js";
+import MessagingService from "../services/messagingService.js";
 import jwt from "jsonwebtoken";
 import redis from "../config/redis.js";
 
@@ -125,16 +126,32 @@ class AuthController {
         });
       }
 
-      const otp = crypto.randomInt(100000, 1000000).toString();
+      // Generate alphanumeric OTP — matches pregnancyController.sendWelcomeOTP format
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+      const randomBytes = crypto.randomBytes(6);
+      const otp = Array.from(randomBytes)
+        .map((b) => chars[b % chars.length])
+        .join("");
 
       await otpStore.set(phone, { otp, attempts: 0, verified: false }, 300);
       await otpStore.set(rateLimitKey, { timestamp: Date.now() }, 60);
 
-      logger.info(`OTP generated for ${phone}`);
+      // Send OTP via SMS
+      try {
+        await MessagingService.sendSMS({
+          to: phone,
+          content: `Your MamaCheck verification code is: ${otp}. Valid for 5 minutes. Do not share this code.`,
+          type: "otp",
+        });
+        logger.info(`OTP sent via SMS to ${phone}`);
+      } catch (smsError) {
+        // Log but don't fail — OTP is stored; user can retry
+        logger.error(`Failed to send OTP SMS to ${phone}:`, smsError.message);
+      }
 
       return res.status(200).json({
         success: true,
-        message: "OTP sent successfully",
+        message: "Verification code sent successfully",
         expiresIn: 300,
       });
     } catch (error) {
@@ -223,7 +240,9 @@ class AuthController {
       await otpStore.set(phone, storedOTP, 300);
 
       let user = await User.findOne({ phone });
+      let wasAlreadyVerified = false;
       if (user) {
+        wasAlreadyVerified = user.phoneVerified; // track before updating
         user.phoneVerified = true;
         user.phoneVerifiedAt = new Date();
         await user.save();
@@ -241,11 +260,46 @@ class AuthController {
       logger.info(`OTP verified for ${phone}`);
       const { accessToken, refreshToken } = this.generateTokens(user);
 
+      // Story 2: Send onboarding confirmation SMS only on first-time verification
+      if (!wasAlreadyVerified) {
+        try {
+          const lang = user.preferredLanguage || "en";
+          const onboardingMessages = {
+            en: `Welcome to MamaCheck! You will receive weekly health check-ins and ANC reminders. Reply STOP at any time to opt out. Your health matters.`,
+            pidgin: `Welcome to MamaCheck! You go dey receive weekly health check and ANC reminder. Reply STOP anytime to stop. Your health important.`,
+            yo: `Ẹ káàbọ̀ sí MamaCheck! Ìwọ yóò gbà àyẹwò ìlera ọ̀sẹ̀ àti ìránlọ́wọ̀ ANC. Fèsì STOP nígbàkúgbà láti yọ kúrò.`,
+            ha: `Barka da zuwa MamaCheck! Za ku sami gwajin lafiya na sati-sati da tunatarwar ANC. Amsa STOP a kowane lokaci don fita.`,
+            ig: `Nnọọ na MamaCheck! Ị ga-enweta nyocha ahụike kwa izu na ncheta ANC. Zaghachi STOP oge ọ bụla ịhapụ.`,
+          };
+          await MessagingService.sendSMS({
+            to: phone,
+            content: onboardingMessages[lang] || onboardingMessages.en,
+            type: "onboarding",
+          });
+          logger.info(`Onboarding SMS sent to ${phone}`);
+        } catch (smsError) {
+          logger.error(
+            `Failed to send onboarding SMS to ${phone}:`,
+            smsError.message,
+          );
+        }
+      }
+
       return res.status(200).json({
         success: true,
         token: accessToken,
         refreshToken,
-        message: "OTP verified successfully",
+        message: "Phone verified successfully.",
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          preferredLanguage: user.preferredLanguage,
+          phoneVerified: user.phoneVerified,
+        },
       });
     } catch (error) {
       logger.error("Verify OTP error:", error);

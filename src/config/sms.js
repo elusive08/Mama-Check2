@@ -14,9 +14,8 @@ const SMS_MAX_LENGTH = 160;
 
 // BulkSMS Nigeria gateway options — choose based on use case
 const BULKSMS_GATEWAY = {
-  DEFAULT: "direct-corporate",
+  DEFAULT: "otp",
   OTP: "otp",
-  DUAL: "dual-backup",
 };
 
 // Retry configuration
