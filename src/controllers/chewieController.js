@@ -510,19 +510,48 @@ class CHEWController {
   /**
    * Update red flag follow-up
    */
+  /**
+   * Update red flag follow-up
+   */
   async updateFollowUp(req, res) {
     try {
       const { reportId } = req.params;
       const { outcome, notes, escalationLevel } = req.body;
       const chewId = req.user._id;
 
+      const VALID_OUTCOMES = [
+        "phone_call",
+        "clinic_visit",
+        "referral",
+        "unable_to_reach",
+      ];
+      if (!outcome) {
+        return res.status(400).json({
+          error:
+            "Outcome is required. Must be one of: " + VALID_OUTCOMES.join(", "),
+        });
+      }
+      if (!VALID_OUTCOMES.includes(outcome)) {
+        return res.status(400).json({
+          error: `Invalid outcome. Must be one of: ${VALID_OUTCOMES.join(", ")}`,
+        });
+      }
+
       const report = await DangerReport.findOne({ _id: reportId, chewId });
       if (!report) {
         return res.status(404).json({ error: "Report not found" });
       }
 
+      // Map outcome to followup status
+      const statusMap = {
+        phone_call: "completed",
+        clinic_visit: "completed",
+        referral: "completed",
+        unable_to_reach: "escalated",
+      };
+
       report.followup = {
-        status: outcome === "unable_to_reach" ? "escalated" : "completed",
+        status: statusMap[outcome],
         outcome: outcome,
         notes: notes || "",
         completedBy: chewId,

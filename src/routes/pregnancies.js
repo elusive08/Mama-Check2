@@ -4,6 +4,7 @@ import { authMiddleware, requireCHEW } from "../middleware/auth.js";
 import { validateRegistration } from "../middleware/validation.js";
 import { registrationLimiter } from "../middleware/rateLimiter.js";
 import ANCVisitLog from "../models/ANCVisitLog.js";
+import ANCPregnancy from "../models/ANCPregnancy.js";
 import Pregnancy from "../models/Pregnancy.js";
 
 const router = express.Router();
@@ -247,6 +248,27 @@ router.post(
         notes: req.body.reason || "Undone by CHEW",
       });
 
+      // Story 13: Reverse the fmohSchedule attended flag on undo
+      try {
+        const ancPregnancy = await ANCPregnancy.findOne({ pregnancyId });
+        if (ancPregnancy) {
+          const milestone = ancPregnancy.fmohSchedule.find(
+            (v) => v.weekNumber === lastLog.visitWeek,
+          );
+          if (milestone) {
+            milestone.attended = false;
+            milestone.attendedDate = undefined;
+            milestone.attendedBy = undefined;
+            await ancPregnancy.save();
+          }
+        }
+      } catch (ancError) {
+        console.error(
+          "Failed to reverse ANCPregnancy fmohSchedule on undo:",
+          ancError.message,
+        );
+      }
+
       res.status(200).json({ success: true, data: undoLog });
     } catch (error) {
       console.error("Error undoing visit:", error);
@@ -324,6 +346,31 @@ router.post(
         attendedDate: new Date(),
         markedAtTime: new Date(),
       });
+
+      // Story 13: Write attendance back to ANCPregnancy.fmohSchedule
+      // so the reminder scheduler stops sending reminders for this milestone.
+      try {
+        const ancPregnancy = await ANCPregnancy.findOne({ pregnancyId });
+        if (ancPregnancy) {
+          const milestone = ancPregnancy.fmohSchedule.find(
+            (v) =>
+              v.weekNumber === week ||
+              v.milestoneNumber === (milestoneNumber || week),
+          );
+          if (milestone) {
+            milestone.attended = true;
+            milestone.attendedDate = new Date();
+            milestone.attendedBy = req.user._id;
+            await ancPregnancy.save();
+          }
+        }
+      } catch (ancError) {
+        // Log but don't fail the request — ANCVisitLog is the source of truth
+        console.error(
+          "Failed to update ANCPregnancy fmohSchedule:",
+          ancError.message,
+        );
+      }
 
       res.status(200).json({ success: true, data: log });
     } catch (error) {
