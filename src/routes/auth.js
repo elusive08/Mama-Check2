@@ -52,6 +52,26 @@ const requireAdmin = async (req, res, next) => {
   }
 };
 
+// Middleware to check if user is supervisor (for protected supervisor routes)
+const requireSupervisor = async (req, res, next) => {
+  try {
+    const token = req.header("Authorization")?.replace("Bearer ", "");
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.userId);
+    if (user?.role !== "supervisor") {
+      return res.status(403).json({ error: "Supervisor access required" });
+    }
+    req.user = user;
+    next();
+  } catch (error) {
+    logger.error("Supervisor auth error:", error.message);
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+};
+
 // Helper functions for forgot-password
 async function findUserByIdentifier(email, phone) {
   const query = {};
@@ -276,8 +296,17 @@ router.post(
           .json({ error: "Phone number already registered" });
       }
 
-      // Generate PHC ID
-      const phcId = `PHC-${lga.toUpperCase().replace(/\s+/g, "-")}-${Date.now()}`;
+      // Generate stable PHC ID from LGA and PHC Name
+      const phcId = `PHC-${lga.toUpperCase().replace(/\s+/g, "-")}-${phcName.toUpperCase().replace(/\s+/g, "-")}`;
+
+      // Check if a CHEW account already exists for this PHC
+      const existingPHCAccount = await CHEWProfile.findOne({ phcId });
+      if (existingPHCAccount) {
+        return res.status(409).json({
+          error: `A CHEW account is already registered for ${phcName} in ${lga}. Only one account per PHC is allowed.`,
+        });
+      }
+
       const hashedPassword = await hashPassword(password);
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
 

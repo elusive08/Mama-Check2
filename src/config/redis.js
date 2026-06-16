@@ -37,33 +37,27 @@ class RedisClient {
           console.error(`Redis: Max retries (${this.maxRetries}) reached`);
           return null; // Stop retrying
         }
-        // Exponential backoff capped at 3s
         const delay = Math.min(100 * 2 ** (times - 1), 3000);
-        console.warn(
-          `Redis: Retry attempt ${times}/${this.maxRetries} in ${delay}ms`,
-        );
+        console.warn(`Redis: Retry attempt ${times}/${this.maxRetries} in ${delay}ms`);
         this.retryCount = times;
         return delay;
       },
       enableReadyCheck: true,
       lazyConnect: false,
-      connectTimeout: 10000,
+      connectTimeout: 15000,
       commandTimeout: 5000,
       keepAlive: 30000,
-      // Explicit IPv4 — ioredis `family: 0` (auto) was removed in some versions
-      // and causes issues on GitHub Actions (IPv6 loopback).
       family: 4,
-      db: Number.parseInt(process.env.REDIS_DB) || 0,
-      password: process.env.REDIS_PASSWORD || undefined,
-      tls:
-        isProduction && process.env.REDIS_TLS === "true"
-          ? {
-              rejectUnauthorized:
-                process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
-              servername: process.env.REDIS_TLS_SERVERNAME,
-            }
-          : undefined,
     };
+
+    // If using rediss:// protocol, ioredis handles TLS automatically.
+    // Only add explicit TLS options if protocol is NOT rediss and TLS is requested.
+    if (process.env.NODE_ENV === "production" && process.env.REDIS_TLS === "true" && !redisUrl.startsWith("rediss://")) {
+      options.tls = {
+        rejectUnauthorized: process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
+        servername: process.env.REDIS_TLS_SERVERNAME,
+      };
+    }
 
     if (process.env.REDIS_SENTINELS) {
       try {

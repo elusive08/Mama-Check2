@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Pregnancy from "../models/Pregnancy.js";
 import ANCPregnancy from "../models/ANCPregnancy.js";
+import CHEWProfile from "../models/CHEWProfile.js";
 import User from "../models/User.js";
 import GestationalAgeService from "../utils/gestationalAge.js";
 
@@ -30,14 +31,18 @@ class PregnancyService {
         data.edd,
       );
 
+      // Fetch CHEWProfile to get phcId
+      const chewProfile = await CHEWProfile.findById(data.chewId);
+
       // Create pregnancy record
       const pregnancy = new Pregnancy({
         womanId: woman._id,
         chewId: data.chewId,
+        phcId: chewProfile?.phcId || data.phcId || "UNKNOWN",
         lmp: data.lmp || ga.lmp,
         edd: data.edd || ga.edd,
         gestationalWeek: ga.weeks,
-        clinicName: data.clinicName,
+        clinicName: data.clinicName || chewProfile?.phcName,
         clinicId: data.clinicId,
         parity: data.parity,
         gravida: data.gravida,

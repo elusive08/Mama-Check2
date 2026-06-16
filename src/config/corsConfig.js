@@ -27,23 +27,19 @@ export const getCorsOptions = () => {
       "http://localhost:3002",
       "http://127.0.0.1:3000",
       "http://127.0.0.1:3001",
-      "http://127.0.0.1:3002",
+      "https://mama-check-flax.vercel.app",
     ].forEach((o) => allowedOrigins.add(o));
   }
+
+  // Always allow the known Vercel frontend
+  allowedOrigins.add("https://mama-check-flax.vercel.app");
 
   // Support both FRONTEND_URL (single) and CORS_ORIGIN (comma-separated list)
   parseOrigins(process.env.FRONTEND_URL).forEach((o) => allowedOrigins.add(o));
   parseOrigins(process.env.CORS_ORIGIN).forEach((o) => allowedOrigins.add(o));
 
   if (nodeEnv === "production") {
-    if (allowedOrigins.size === 0) {
-      console.error(
-        "FATAL: No CORS origins configured for production. Set FRONTEND_URL or CORS_ORIGIN.",
-      );
-      process.exit(1);
-    }
-
-    // Strip localhost in production
+    // Strip localhost in production to be strict
     for (const origin of allowedOrigins) {
       if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
         allowedOrigins.delete(origin);
@@ -52,7 +48,7 @@ export const getCorsOptions = () => {
 
     if (allowedOrigins.size === 0) {
       console.error(
-        "FATAL: Only localhost origins found in production. Configure proper domain URLs.",
+        "FATAL: No CORS origins configured for production. Set FRONTEND_URL or CORS_ORIGIN.",
       );
       process.exit(1);
     }
@@ -65,9 +61,11 @@ export const getCorsOptions = () => {
     if (allowedOrigins.has(origin)) {
       callback(null, true);
     } else {
-      // Always log rejections regardless of environment for observability
+      // Log rejection for observability
       console.warn(`CORS rejected origin: ${origin}`);
-      callback(new Error(`Origin '${origin}' not allowed by CORS`));
+      // Returning null as the first argument tells the cors middleware to reject the request
+      // without passing an error to the global error handler (which avoids 500s)
+      callback(null, false);
     }
   };
 

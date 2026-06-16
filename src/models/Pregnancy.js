@@ -12,6 +12,11 @@ const pregnancySchema = new mongoose.Schema(
       ref: "CHEWProfile",
       required: true,
     },
+    phcId: {
+      type: String,
+      required: true,
+      index: true,
+    },
     lmp: Date,
     edd: Date,
     gestationalWeek: {
