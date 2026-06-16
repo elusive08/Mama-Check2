@@ -59,7 +59,7 @@ jobs:
           MONGODB_URI=mongodb://localhost:27017/mamacheck-test
           JWT_SECRET=test-secret-key-for-github-actions-32-chars-minimum
           JWT_REFRESH_SECRET=test-refresh-secret-key-32-chars-minimum
-          REDIS_URL=redis://localhost:6379
+          REDIS_URL=mock
           LOG_LEVEL=debug
           BYPASS_OTP_FOR_TESTING=true
           OTP_EXPIRY_MINUTES=5

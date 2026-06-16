@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import { MongoMemoryServer } from "mongodb-memory-server";
 
 // Load test environment variables
 dotenv.config({ path: ".env.test" });
@@ -8,15 +9,16 @@ dotenv.config({ path: ".env.test" });
 mongoose.set("bufferCommands", true);
 mongoose.set("bufferTimeoutMS", 60000);
 
+let mongoServer;
+
 // Global beforeAll hook
 beforeAll(async () => {
-  const mongoUri = process.env.MONGODB_URI;
+  // ✅ Use in-memory MongoDB for tests instead of Atlas
+  console.log("Starting MongoDB memory server...");
+  mongoServer = await MongoMemoryServer.create();
+  const mongoUri = mongoServer.getUri();
 
-  if (!mongoUri) {
-    throw new Error("MONGODB_URI not set. Please check .env.test file");
-  }
-
-  console.log("Connecting to MongoDB Atlas...");
+  console.log("Connecting to in-memory MongoDB...");
 
   // Disconnect any existing connections
   if (mongoose.connection.readyState !== 0) {
@@ -33,21 +35,17 @@ beforeAll(async () => {
     retryReads: true,
   });
 
-  console.log("Connected to MongoDB Atlas");
+  console.log("Connected to in-memory MongoDB");
 }, 120000);
 
 // Global afterAll hook
 afterAll(async () => {
   await mongoose.disconnect();
+  if (mongoServer) {
+    await mongoServer.stop();
+  }
   console.log("Disconnected from MongoDB");
 });
-
-// Global beforeEach: intentionally empty.
-// Unit tests clean up their own mocks/state inline.
-// Integration tests manage their own DB cleanup in their local beforeEach/afterEach
-// so they can persist setup data (admin, CHEW) across the test lifecycle.
-// DO NOT wipe collections here — it would delete admin/CHEW users created in
-// integration test beforeAll blocks before the test's own beforeEach runs.
 
 // Error handlers
 mongoose.connection.on("error", (err) => {
