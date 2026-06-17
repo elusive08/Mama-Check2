@@ -249,6 +249,84 @@ class PregnancyController {
   }
 
   /**
+   * Verify OTP for a pregnant woman's registration
+   */
+  async verifyOTP(req, res) {
+    try {
+      const { phone, otp, pregnancyId } = req.body;
+
+      if (!phone || !otp) {
+        return res
+          .status(400)
+          .json({ error: "Phone number and OTP are required" });
+      }
+
+      const user = await User.findOne({ phone });
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.phoneVerified) {
+        return res.status(400).json({ error: "Phone already verified" });
+      }
+
+      // Check OTP
+      if (!user.otp || user.otp.toLowerCase() !== otp.toLowerCase()) {
+        return res.status(400).json({ error: "Invalid OTP" });
+      }
+
+      // Check Expiry
+      if (new Date() > user.otpExpiry) {
+        return res.status(400).json({ error: "OTP has expired" });
+      }
+
+      // Mark as verified
+      user.phoneVerified = true;
+      user.phoneVerifiedAt = new Date();
+      user.otp = null;
+      user.otpExpiry = null;
+      await user.save();
+
+      // Find the pregnancy record if pregnancyId was provided
+      let pregnancy = null;
+      if (pregnancyId) {
+        pregnancy = await Pregnancy.findById(pregnancyId);
+      } else {
+        // Find the latest active pregnancy for this user
+        pregnancy = await Pregnancy.findOne({
+          womanId: user._id,
+          status: "active",
+        }).sort({ createdAt: -1 });
+      }
+
+      if (pregnancy) {
+        // Mark pregnancy as active (it starts as pending_verification)
+        pregnancy.status = "active";
+        await pregnancy.save();
+
+        // Now send the actual welcome message (not just OTP)
+        await this.sendWelcomeMessage(pregnancy, user);
+        logger.info(`Registration completed for pregnancy ${pregnancy._id}`);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Registration completed successfully. Phone verified.",
+        user: {
+          id: user._id,
+          name: user.name,
+          phone: user.phone,
+          phoneVerified: true,
+        },
+        pregnancyId: pregnancy ? pregnancy._id : null,
+      });
+    } catch (error) {
+      logger.error("OTP verification error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  /**
    * Create pregnancy record
    */
   async createPregnancyRecord(user, data, chewUserId) {
@@ -269,7 +347,6 @@ class PregnancyController {
       gestationalWeek: gestationalAge.weeks,
       clinicName: data.clinicName || chewProfile?.phcName,
       registrationDate: new Date(),
-      status: "active",
       lastCheckin: new Date(),
     });
 

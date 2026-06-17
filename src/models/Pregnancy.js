@@ -29,8 +29,8 @@ const pregnancySchema = new mongoose.Schema(
     riskFactors: [String],
     status: {
       type: String,
-      enum: ["active", "delivered", "miscarried", "transferred"],
-      default: "active",
+      enum: ["pending_verification", "active", "delivered", "miscarried", "transferred"],
+      default: "pending_verification",
     },
     registrationDate: {
       type: Date,

@@ -102,6 +102,43 @@ router.post(
 
 /**
  * @swagger
+ * /api/v1/pregnancies/verify-otp:
+ *   post:
+ *     tags:
+ *       - Pregnancies
+ *     summary: Verify OTP to complete pregnancy registration
+ *     description: Verifies the OTP sent to the woman's phone to finalize registration and trigger the welcome message.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - otp
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 example: "08012345678"
+ *               otp:
+ *                 type: string
+ *                 example: "A1B2C3"
+ *               pregnancyId:
+ *                 type: string
+ *                 description: Optional pregnancy ID to associate with verification
+ *     responses:
+ *       200:
+ *         description: Registration verified and completed
+ *       400:
+ *         description: Invalid or expired OTP
+ *       404:
+ *         description: User not found
+ */
+router.post("/verify-otp", (req, res) => pregnancyController.verifyOTP(req, res));
+
+/**
+ * @swagger
  * /api/v1/pregnancies/chew/{chewId}:
  *   get:
  *     tags:

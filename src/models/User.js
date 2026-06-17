@@ -198,7 +198,7 @@ userSchema.methods.getDisplayName = function () {
 };
 
 userSchema.methods.canReceiveSMS = function () {
-  return this.consent.sms && !this.optOut.isOptedOut;
+  return this.consent.sms && !this.optOut.isOptedOut && this.phoneVerified;
 };
 
 export default mongoose.model("User", userSchema);
