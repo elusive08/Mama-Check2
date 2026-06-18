@@ -28,8 +28,9 @@ class SchedulerService {
   }
 
   startWeeklyCheckinScheduler() {
-    const job = cron.schedule("0 8 * * 0", async () => {
-      console.log("Running weekly check-in scheduler...");
+    // Run daily at 8:00 AM instead of only on Sundays
+    const job = cron.schedule("0 8 * * *", async () => {
+      console.log("Running rolling weekly check-in scheduler...");
       await this.processWeeklyCheckins();
     });
     this.jobs.set("weeklyCheckin", job);
