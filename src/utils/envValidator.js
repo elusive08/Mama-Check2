@@ -8,9 +8,6 @@ if (process.env.NODE_ENV === "test") {
 const requiredEnvVars = [
   "MONGODB_URI",
   "JWT_SECRET",
-  "TWILIO_ACCOUNT_SID",
-  "TWILIO_AUTH_TOKEN",
-  "TWILIO_PHONE_NUMBER",
   "GROQ_API_KEY",
   "NODE_ENV",
   "LOG_LEVEL",
@@ -44,7 +41,18 @@ export const validateEnvironment = () => {
     }
   });
 
+  // SMS provider-specific validation
+  if (process.env.SMS_PROVIDER === "twilio") {
+    const twilioVars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"];
+    twilioVars.forEach((varName) => {
+      if (!process.env[varName]) {
+        missing.push(varName);
+      }
+    });
+  }
+
   // Validate NODE_ENV is valid
+
   const validNodeEnvs = ["development", "production", "test"];
   if (process.env.NODE_ENV && !validNodeEnvs.includes(process.env.NODE_ENV)) {
     errors.push(`NODE_ENV must be one of: ${validNodeEnvs.join(", ")}`);

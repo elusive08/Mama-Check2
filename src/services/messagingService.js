@@ -107,8 +107,8 @@ class MessagingService {
     }
 
     const result = await smsProvider.send(message.to, message.content, {
-      // Route OTP-type messages through the low-latency gateway
-      gateway: message.type === "otp" ? "otp" : undefined,
+      // Use the default provider gateway (corporate) for all messages, including OTPs,
+      // as the dedicated 'otp' gateway has shown delivery issues.
       reference: message._id?.toString(),
     });
 

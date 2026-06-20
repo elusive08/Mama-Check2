@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { hashPassword, comparePassword } from "../utils/passwordUtils.js";
 import jwt from "jsonwebtoken";
 import redis from "../config/redis.js";
+import messagingService from "../services/messagingService.js";
 
 class AuthController {
   generateTokens(user) {
@@ -80,6 +81,23 @@ class AuthController {
 
       await user.save();
 
+      // Queue welcome SMS for onboarding
+      if (assignedRole === "patient") {
+        try {
+          logger.info(`Queuing onboarding SMS for ${user._id}`);
+          await messagingService.queueMessage({
+            to: user.phone,
+            content: `Welcome to MamaCheck! You will receive health reminders. Reply STOP to opt out.`,
+            type: "welcome",
+            language: user.preferredLanguage,
+            priority: "normal"
+          });
+        } catch (smsError) {
+          logger.error("Failed to queue onboarding SMS:", smsError);
+          // We don't fail registration if SMS fails
+        }
+      }
+
       const { accessToken, refreshToken } = this.generateTokens(user);
 
       logger.info(`User registered: ${user._id} (role: ${assignedRole})`);
@@ -95,11 +113,11 @@ class AuthController {
           role: user.role,
         },
       });
-    } catch (error) {
+      } catch (error) {
       logger.error("Register error:", error);
       return res.status(500).json({ error: "Registration failed" });
-    }
-  }
+      }
+      }
 
   /**
    * Send OTP for phone verification

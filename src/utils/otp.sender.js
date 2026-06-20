@@ -4,7 +4,11 @@ import otpStore from "./otpStore.js";
 export const sendOTP = async (phone) => {
   let otp;
   try {
-    otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Removed ambiguous chars like 0, O, 1, I
+    otp = "";
+    for (let i = 0; i < 6; i++) {
+      otp += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
 
     // Store OTP
     await otpStore.set(
