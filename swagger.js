@@ -31,7 +31,7 @@ const options = {
     ],
     servers: [
       { url: "http://localhost:3000", description: "Local Development" },
-      { url: "https://mama-check.onrender.com", description: "Production" },
+      { url: "https://mama-check2.onrender.com", description: "Production" },
     ],
     components: {
       securitySchemes: {
