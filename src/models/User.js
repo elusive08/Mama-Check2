@@ -121,7 +121,7 @@ const userSchema = new mongoose.Schema(
     // ========== VERIFICATION ==========
     phoneVerified: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     phoneVerifiedAt: {
       type: Date,
