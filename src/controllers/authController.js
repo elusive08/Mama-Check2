@@ -70,16 +70,36 @@ class AuthController {
 
       const user = new User({
         phone,
-        name: name || "",
         password: hashedPassword,
+        name: name || "",
         role: assignedRole,
         preferredLanguage,
-        phoneVerified: false,
+        phoneVerified: true, // Auto-verified for development
         optOut: { isOptedOut: false },
         consent: { sms: true, dataProcessing: true, consentDate: new Date() },
       });
 
       await user.save();
+
+      // Send onboarding SMS immediately since we are bypassing OTP
+      try {
+        const lang = user.preferredLanguage || "en";
+        const onboardingMessages = {
+          en: `Welcome to MamaCheck! You will receive weekly health check-ins and ANC reminders. Reply STOP at any time to opt out. Your health matters.`,
+          pidgin: `Welcome to MamaCheck! You go dey receive weekly health check and ANC reminder. Reply STOP anytime to stop. Your health important.`,
+          yo: `Ẹ káàbọ̀ sí MamaCheck! Ìwọ yóò gbà àyẹwò ìlera ọ̀sẹ̀ àti ìránlọ́wò ANC. Fèsì STOP nígbàkúgbà láti yọ kúrò.`,
+          ha: `Barka da zuwa MamaCheck! Za ku sami gwajin lafiya na sati-sati da tunatarwar ANC. Amsa STOP a kowane lokaci don fita.`,
+          ig: `Nnọọ na MamaCheck! Ị ga-enweta nyocha ahụike kwa izu na ncheta ANC. Zaghachi STOP oge ọ bụla ịhapụ.`,
+        };
+        await MessagingService.sendSMS({
+          to: user.phone,
+          content: onboardingMessages[lang] || onboardingMessages.en,
+          type: "onboarding",
+        });
+        logger.info(`Onboarding SMS sent to ${user.phone} (auto-verified)`);
+      } catch (smsError) {
+        logger.error(`Failed to send auto-verified onboarding SMS to ${user.phone}:`, smsError.message);
+      }
 
       const { accessToken, refreshToken } = this.generateTokens(user);
 
